@@ -1,0 +1,6 @@
+~*
+*.swp
+*.aux
+*.bbl
+*.lof
+impl/res

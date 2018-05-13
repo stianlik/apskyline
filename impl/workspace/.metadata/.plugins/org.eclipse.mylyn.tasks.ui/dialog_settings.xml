@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="TaskSelectionDialogSection">
+		<item value="true" key="ShowStatusLine"/>
+		<item value="true" key="IsUsingWindowWorkingSet"/>
+		<item value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?&gt;&#x0A;&lt;History/&gt;" key="History"/>
+		<item value="Aggregate for window 1370380188893" key="WorkingSetName"/>
+		<item value="false" key="OpenInBrowser"/>
+		<item value="true" key="ShowCompletedTasks"/>
+		<section name="DialogBoundsSettings">
+			<item value="710" key="DIALOG_WIDTH"/>
+			<item value="95" key="DIALOG_Y_ORIGIN"/>
+			<item value="555" key="DIALOG_HEIGHT"/>
+			<item value="328" key="DIALOG_X_ORIGIN"/>
+			<item value="1|Cantarell|11.0|0|GTK|1|" key="DIALOG_FONT_NAME"/>
+		</section>
+	</section>
+</section>

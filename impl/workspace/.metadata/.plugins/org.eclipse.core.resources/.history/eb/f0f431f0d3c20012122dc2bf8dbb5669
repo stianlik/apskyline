@@ -1,0 +1,159 @@
+/*
+ * pskyline algorithm presented in
+ * Park, Kim, Park, Kim, Im: Parallel Skyline Computation on Multicore Architectures
+ */
+
+package no.ntnu.skyline;
+
+import ifis.skysim2.algorithms.AbstractSkylineAlgorithm;
+import ifis.skysim2.algorithms.SkylineAlgorithmSskyline;
+import ifis.skysim2.data.points.ArrayPointList;
+import ifis.skysim2.data.points.ShiftingArrayPointList;
+import ifis.skysim2.data.sources.PointSource;
+import ifis.skysim2.data.tools.PointRelationship;
+import ifis.skysim2.simulator.SimulatorConfiguration;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicIntegerArray;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+public class APSkylineAlgorithm extends AbstractSkylineAlgorithm {
+
+	private int numCPUs;
+	private int numBlocks;
+	
+	public PartitionStrategy partitionStrategy;
+	
+	public APSkylineAlgorithm() {
+		this(new LinearPartitionStrategy());
+	}
+	
+	public APSkylineAlgorithm(PartitionStrategy partitionStrategy) {
+		this.partitionStrategy = partitionStrategy;
+	}
+	
+	@Override
+	public void setExperimentConfig(SimulatorConfiguration config) {
+		super.setExperimentConfig(config);
+		numCPUs = config.getNumberOfCPUs();
+		numBlocks = config.getDistributedNumBlocks();
+	}
+	
+	@Override
+	public List<float[]> compute(PointSource data) {
+		try {
+			
+			startTimer("runtime");
+			
+			// Partitioning
+			startTimer("partitioning");
+			PointSource[] partitions = null;
+			partitions = partitionStrategy.exec(data, numBlocks, this);
+			stopTimer("partitioning");
+			
+			// Local skylines
+			startTimer("local skylines");
+			ExecutorService executor = Executors.newFixedThreadPool(numCPUs);
+			List<SSkylineTask> tasks = new ArrayList<SSkylineTask>(numBlocks);
+			for (int i = 0; i < partitions.length; ++i) {
+				tasks.add(new SSkylineTask(partitions[i]));
+			}
+			List<Future<ArrayPointList>> results = executor.invokeAll(tasks);
+			stopTimer("local skylines");
+			
+			// Merge results
+			startTimer("merge");
+			Iterator<Future<ArrayPointList>> iter = results.iterator();
+			ArrayPointList result = iter.next().get();
+			while (iter.hasNext()) {
+				result = parallelMerge(executor, result, iter.next().get(), numCPUs);
+			}
+	
+			executor.shutdown();
+			executor.awaitTermination(1, TimeUnit.DAYS);
+			
+			stopTimer("merge");
+			stopTimer("runtime");
+			
+			totalTimeNS = timers.get("runtime")[2];
+			
+			return result;
+		} catch (Exception e) {
+			e.printStackTrace();
+			throw new RuntimeException(e);
+		}
+	}
+	
+	/*
+	 * In parallel, merges two skyline sets into a common skyline set. See Park,
+	 * Kim, Park, Kim, Im: Parallel Skyline Computation on Multicore
+	 * Architectures (pmerge, Figure 3)
+	 */
+	private static ArrayPointList parallelMerge(
+			final ExecutorService executor, final ArrayPointList s1,
+			final ArrayPointList s2, final int numCPUs) {
+		final int n1 = s1.size();
+		final int n2 = s2.size();
+		final int[] t1Base = new int[n1];
+		Arrays.fill(t1Base, MergeTask.TRUE);
+		final int[] t2Base = new int[n2];
+		final AtomicIntegerArray t1 = new AtomicIntegerArray(t1Base);
+		final AtomicIntegerArray t2 = new AtomicIntegerArray(t2Base);
+		final AtomicInteger i2a = new AtomicInteger();
+
+		final Collection<Callable<Object>> mergers = new ArrayList<Callable<Object>>(
+				numCPUs);
+		for (int i = 0; i < numCPUs; i++) {
+			Callable<Object> merger = new MergeTask(s1, s2, t1, t2, i2a);
+			mergers.add(merger);
+		}
+		try {
+			executor.invokeAll(mergers);
+		} catch (InterruptedException ex) {
+			Logger.getLogger(APSkylineAlgorithm.class.getName()).log(
+					Level.SEVERE, null, ex);
+		}
+
+		// now, the following is true:
+		// t1[i] == true iff s1[i] is contained in the merged skyline
+		// t2[i] == true iff s2[i] is contained in the merged skyline
+
+		// condense result (very fast comparable to the rest; no need to
+		// optimize here)
+		int d = s1.getD();
+		ArrayPointList result = new ShiftingArrayPointList(n1 + n2, d);
+		for (int i1 = 0; i1 < n1; i1++) {
+			if (t1.get(i1) == MergeTask.TRUE) {
+				result.add(s1.get(i1));
+			}
+		}
+		for (int i2 = 0; i2 < n2; i2++) {
+			if (t2.get(i2) == MergeTask.TRUE) {
+				result.add(s2.get(i2));
+			}
+		}
+
+		return result;
+	}
+	
+	@Override
+	public String toString() {
+		return String.format("pskyline (%d %d)", numCPUs, numBlocks);
+	}
+
+	@Override
+	public String getShortName() {
+		return "PSkyline";
+	}
+}

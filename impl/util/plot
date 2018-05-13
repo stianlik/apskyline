@@ -1,0 +1,107 @@
+#!/usr/bin/octave -qf
+args = argv();
+if (length(args) != 4)
+	printf('%s','Usage: ./plot GRAPH INFILE OUTFILE')
+	exit(1)
+endif
+
+graph = args{1}
+param = args{2}
+infile = args{3}
+outfile = args{4}
+
+fp = fopen(infile);
+data = textscan(fp, '%d %d %f %d', 'CommentStyle', '#');
+fclose(fp);
+
+algorithms = transpose(unique(data{1}));
+hold on;
+style = {"-.", "-", "-s", "-x", "-o", "-^", "-s", "-s"};
+for j = 1:size(algorithms,2)
+	attribute = transpose(unique(data{2}));
+	#attribute = attribute(:,1:4);
+	results = zeros(size(attribute,2),10);
+	work = zeros(size(attribute,2),1);
+	for i = 1:size(attribute,2)
+		results(i,2:10) = statistics(data{3}(data{1} == algorithms(j) & data{2} == attribute(i)));
+		results(i,1) = attribute(i);
+		work(i) = median(data{4}(data{1} == algorithms(j) & data{2} == attribute(i)));
+	endfor
+	if (j == 1)
+		seqResults = results;
+	endif
+	speedup = seqResults(:,4) ./ results(:,4)
+	figure(1,'visible','off');
+
+	# Time with errorbars for standard deviation (median)
+	if (strcmp(graph, "errorbar"))
+		h = errorbar(results(:,7),results(:,8));
+	endif
+
+	# Time (median)
+	if (strcmp(graph,"time"))
+		h = plot(results(:,7), style{j});
+	endif
+
+	# Time (mean) TODO fiks..
+	if (strcmp(graph, "mean"))
+		h = plot(results(:,7), style{j});
+	endif
+
+	# Speedup (median)
+	if (strcmp(graph, "speedup"))
+		#if (j == 2)
+			#h = plot(speedup, "-s");
+			#h = plot([1,2,4,6,8,12,24,34,64,128,256,512,1024], "-") # linear speedup
+		#else
+		   h = plot(speedup, style{j});
+		#endif
+	endif
+
+	# Work (median)
+	if (strcmp(graph, "work"))
+		h = plot(work ./ 10e3, style{j});
+	endif
+
+	r = (mod(j,2) > 0) * 0.5
+	g = (mod(j,3) > 0) * 0.5
+	b = (mod(j,4) > 0) * 0.5
+
+	set(h(1), "color", [r g b])
+endfor
+hold off;
+legend("TA", "HIPTA 1", "HIPTA 2", "HIPTA 12", "HIPTA 24", "HIPTA 1024", "location", "northwest")
+#legend("TA", "HIPTA", "Linear speedup", "HIPTA 12", "HIPTA 24", "HIPTA 1024", "location", "northwest")
+#legend("TA", "HIPTA")
+axis([1, size(results(:,1),1)])
+set(gca, 'xtick', 1:size(results(:,1)))
+#set(gca, 'xticklabel', { "4M", "16M", "32M", "64M", "128M", "256M" })
+set(gca, 'xticklabel', results(:,1))
+
+# Label x-axis
+
+xlabel(param)
+
+# Label y-axis
+
+if (strcmp(graph,"errorbar"))
+	ylabel 'Time (seconds)'
+endif
+
+if (strcmp(graph,"time"))
+	ylabel 'Time (seconds)'
+endif
+
+if (strcmp(graph,"mean"))
+	ylabel 'Time (seconds)'
+endif
+
+if (strcmp(graph,"speedup"))
+	ylabel 'Speedup (S = T1 / Tn)'
+endif
+
+if (strcmp(graph,"work"))
+	ylabel 'Work (1000 records processed)'
+endif
+
+print(outfile, '-dpdf', "-F:18");

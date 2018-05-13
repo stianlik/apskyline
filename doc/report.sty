@@ -1,0 +1,126 @@
+\ProvidesPackage{report}
+
+%\usepackage[cm]{fullpage}
+\usepackage[hmargin=3cm,vmargin=3cm]{geometry}
+\usepackage{setspace}
+\usepackage{lmodern}
+
+% binding margins
+%\usepackage{geometry}
+%\geometry{textwidth=15cm}
+%\geometry{bindingoffset=2cm}
+
+%\usepackage[twoside,left=4cm, right=2cm, vmargin=3cm]{geometry}
+\usepackage{emptypage}
+
+% Sidenummer til høyre/venstre for tosidig utskrift
+\usepackage{scrpage2}
+\ifoot[]{}
+\cfoot[]{}
+\ofoot[\pagemark]{\pagemark}
+\pagestyle{scrplain}
+
+\usepackage{tikz}
+\usetikzlibrary{calc}
+\tikzset{
+	>=stealth,
+	point/.style={circle,inner sep=0}
+}
+\usepackage{amsmath}
+\usepackage{mathabx}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref} 
+\usepackage{url} 
+\usepackage[utf8]{inputenc}
+%\usepackage{lscape}
+\usepackage{pdflscape}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{parskip} % No identation for paragraphs
+%\usepackage[noend]{algorithmic}
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+\usepackage{etoolbox}
+\usepackage{amsthm}
+\usepackage{thmtools}
+\usepackage{comment}
+\usepackage[lofdepth,lotdepth]{subfig}
+%\usepackage[usenames,dvipsnames]{xcolor}
+\setcounter{tocdepth}{1}
+\frenchspacing
+
+\lstnewenvironment{sql}[1][]
+	{\minipage{\linewidth} 
+		\lstset{
+		language=SQL,
+		tabsize=4,
+		frame=tb,
+		basicstyle=\ttfamily,
+		keywordstyle=\uppercase,
+		captionpos=b,
+		aboveskip=2em,
+		belowskip=1em,
+		escapeinside={/*}{*/},
+		#1
+	}}
+	{\endminipage}
+
+%\newtheoremstyle{example}
+%	{\parskip}	% space above
+%	{}			% space below
+%	{\itshape}	% Font in body
+%	{}			% Indent
+%	{\scshape}	% Font in head
+%	{.}			% Punctuation between head and body
+%	{.5em}		% Space after theorem head
+%	{}			% Manually specify head
+\declaretheoremstyle[spaceabove=\parskip]{example}
+\declaretheorem[style=example]{example}
+\theoremstyle{example}\newtheorem{definition}{Definition}
+
+\newcommand{\testresult}[3]{
+	\subfloat[#1][#2]{
+		\centering
+		% left bottom right top
+		% 0.36
+		\includegraphics[scale=0.34,trim=0.8cm 5.0cm 1cm 6.8cm]{#3} 
+		%\includegraphics[scale=0.34,trim=0.8cm 6.5cm 1cm 6.8cm]{#3} 
+	} 
+}
+
+\newcommand{\testresultThree}[3]{
+	\subfloat[#1][#2]{
+		\centering
+		% left bottom right top
+		% 0.36
+		\includegraphics[scale=0.25,trim=0.8cm 5.0cm 1cm 6.8cm]{#3} 
+		%\includegraphics[scale=0.34,trim=0.8cm 6.5cm 1cm 6.8cm]{#3} 
+	} 
+}
+
+\newcommand{\testresultDist}[3]{
+	\subfloat[#1][#2]{
+		\centering
+		% left bottom right top
+		% 0.36
+		\includegraphics[scale=0.34,trim=0.8cm 0.8cm 1cm 6.8cm]{#3} 
+		%\includegraphics[scale=0.34,trim=0.8cm 6.5cm 1cm 6.8cm]{#3} 
+	} 
+}
+
+\newcommand{\testresultSingle}[1]{
+	\includegraphics[scale=0.5,trim=0.8cm 5.0cm 1cm 6.8cm]{#1}
+}
+
+% Expand algorithmic
+\algblockdefx[forallp]{ForAllP}{EndForAllP}[1]{\textbf{parallel for} #1 \textbf{do}}{\textbf{end parallel for}}
+\algnewcommand\Lock[1]{\textbf{lock} #1}
+\algnewcommand\Unlock[1]{\textbf{ulock} #1}
+\algnewcommand\Break{\textbf{break}}
+\algnotext{EndForAllP}
+\makeatother
+
+\newenvironment{poliabstract}[1]
+  {\renewcommand{\abstractname}{#1}\begin{abstract}}
+  {\end{abstract}}
+

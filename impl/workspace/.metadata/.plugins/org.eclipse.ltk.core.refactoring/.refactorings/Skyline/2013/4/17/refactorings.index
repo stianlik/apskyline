@@ -1,0 +1,13 @@
+1366633505902	Delete element
+1366634122254	Rename field 'time'
+1366634142914	Rename field 'runtime'
+1366634148271	Rename field 'partitioningTime'
+1366635073600	Rename method 'parallel_merge'
+1366703884721	Rename local variable 'algorithm'
+1366703898543	Rename local variable 'thread_count'
+1366703904234	Rename local variable 'threadCount'
+1366713391848	Rename method 'getEllapsedTime'
+1366713400214	Rename method 'getEllapsedTimeS'
+1366713403073	Rename method 'getEllapsedTimeInSecond'
+1366871966836	Rename type 'ParallelAnglePartitionStraregy'
+1366977826489	Rename local variable 'expectedSize'

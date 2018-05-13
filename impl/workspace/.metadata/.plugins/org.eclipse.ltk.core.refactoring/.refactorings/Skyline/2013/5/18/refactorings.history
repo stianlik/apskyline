@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename local variable &apos;increasedPa&apos; in &apos;no.ntnu.skyline.AnglePartitionStrategy.calculatePartitionsPerDimension(...)&apos; to &apos;increasedPartitionCount&apos;&#x0A;- Original project: &apos;Skyline&apos;&#x0A;- Original element: &apos;no.ntnu.skyline.AnglePartitionStrategy.calculatePartitionsPerDimension(int, int).increasedPa&apos;&#x0A;- Renamed element: &apos;increasedPa&apos;&#x0A;- Update references to refactored element" description="Rename local variable &apos;increasedPa&apos;" id="org.eclipse.jdt.ui.rename.local.variable" input="/src&lt;no.ntnu.skyline{AnglePartitionStrategy.java[AnglePartitionStrategy~calculatePartitionsPerDimension~I~I@increasedPa!4226!4252!4234!4244!Z!0!false" name="increasedPartitionCount" references="true" stamp="1367405313300" version="1.0"/>
+</session>

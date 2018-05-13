@@ -1,0 +1,67 @@
+<project>
+	
+	  <property name="lib.dir" value="lib"/>
+	  <property name="build.dir" value="build"/>
+	  <property name="src.dir" value="src"/>
+	  <property name="main-class" value="ifis.skysim2.MyExperiment" />
+	  
+
+    <path id="cpath">
+        <fileset dir="${lib.dir}" includes="**/*.jar"/>
+    </path>
+
+
+    <target name="clean">
+        <delete dir="${build.dir}"/>
+    </target>
+
+    <target name="compile">
+        <mkdir dir="build/classes"/>
+        <javac srcdir="${src.dir}" destdir="build/classes"
+        		compiler="modern" source="1.5"
+ 						classpathref="cpath">
+							<compilerarg value="-Xlint"/>
+        </javac>
+    </target>
+
+    <target name="jar" depends="compile">
+        <mkdir dir="${build.dir}/jar"/>
+        <jar destfile="${build.dir}/jar/skysim2.jar" basedir="${build.dir}/classes">
+            <manifest>
+                <attribute name="Main-Class" value="ifis.skysim2.MyExperiment"/>
+            </manifest>
+        </jar>
+    </target>
+    
+    <target name="getlib">
+    		<delete dir="lib"/>
+    		<mkdir dir="lib"/>
+    		<get src="http://www.ifis.cs.tu-bs.de/javalib/colt-1.2.0.jar" dest="${lib.dir}/colt.jar"/>
+    		<get src="http://www.ifis.cs.tu-bs.de/javalib/db2jcc4.jar" dest="${lib.dir}/db2jcc.jar"/>
+    		<get src="http://www.ifis.cs.tu-bs.de/javalib/mail.jar" dest="${lib.dir}/mail.jar"/>
+    		<get src="http://www.ifis.cs.tu-bs.de/javalib/commons-email-1.1.jar" dest="${lib.dir}/commons-email.jar"/>	
+    </target>
+
+    <target name="runjar" depends="jar">
+        <java classname="${main-class}" fork="true" >
+         <classpath>
+          <path location="${build.dir}/jar/skysim2.jar"/>
+           <path refid="cpath"/>
+         </classpath>
+        </java>
+    </target>
+    
+    <target name="dumpdb" depends="jar">
+        <java classname="ifis.skysim2.data.tools.DbDumpFileCreator" fork="true" >
+         <classpath>
+          <path location="${build.dir}/jar/skysim2.jar"/>
+           <path refid="cpath"/>
+         </classpath>
+        </java>
+    </target>
+    
+     <target name="run">
+        <java jar="build/jar/skysim2.jar" fork="true" classpathref="lib.path.ref"/>
+    </target>
+
+</project>

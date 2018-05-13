@@ -1,0 +1,25 @@
+1362996131695	Delete element
+1363000305845	Rename local variable 'point'
+1363002209796	Rename local variable 'iter'
+1363002396946	Rename local variable 'd'
+1363002422838	Rename local variable 'dominance'
+1363007355479	Rename local variable 'relation'
+1363010534531	Rename local variable 'expectedResult'
+1363011926677	Rename local variable 'found'
+1363012251953	Rename method 'testAlgorithm'
+1363012264671	Rename method 'assertAlgorithm'
+1363012975438	Rename package 'master'
+1363097739862	Rename type 'LazyBNLAlgorithm'
+1363171273263	Rename local variable 'pred'
+1363172189794	Rename method 'getNext'
+1363172448841	Rename field 'index'
+1363172457396	Rename field 'curDataIndex'
+1363172520735	Rename local variable 'threadnum'
+1363177613596	Rename type 'IterIter'
+1363182504552	Copy compilation unit
+1363185834640	Rename type 'Dominance'
+1363260759584	Delete element
+1363260772963	Move compilation unit
+1363260775006	Delete element
+1363260856888	Move compilation units
+1363260859105	Delete element

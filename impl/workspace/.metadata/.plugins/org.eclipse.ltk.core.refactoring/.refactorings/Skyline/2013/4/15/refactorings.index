@@ -1,0 +1,21 @@
+1365753310543	Copy compilation unit
+1365753323649	Rename type 'SkylineAlgorithmPskyline'
+1365753338503	Rename type 'APSkyline'
+1365753812733	Delete element
+1365754295498	Rename method 'assertAlgorithmCorrect'
+1365754303671	Rename method 'should_return_valid_skyline_for_simple_calse'
+1365754902529	Extract method 'testAlgorithm'
+1365755431198	Copy compilation unit
+1365756722407	Rename type 'SkylineExmeriment'
+1365758410187	Delete elements
+1365758550691	Extract method 'summary'
+1365758639611	Extract method 'verifyInput'
+1365759004138	Rename type 'ExperimentStatistics'
+1365759147690	Extract method 'step'
+1365759221563	Rename method 'step'
+1365759431493	Extract method 'generateSource'
+1365760396594	Extract method 'testAlgorithm'
+1365760407026	Rename method 'testAlgorithm'
+1365760548352	Extract method 'testAlgorithm'
+1365761165010	Rename method 'testAlgorithm'
+1365775112673	Rename local variable 'string'

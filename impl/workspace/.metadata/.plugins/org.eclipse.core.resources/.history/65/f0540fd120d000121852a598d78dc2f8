@@ -1,0 +1,40 @@
+package no.ntnu.skyline;
+
+import ifis.skysim2.data.generator.DataGenerator;
+import ifis.skysim2.data.generator.DataGeneratorBKS01Anticorrelated;
+import ifis.skysim2.data.generator.DataGeneratorBKS01Correlated;
+import ifis.skysim2.data.generator.DataGeneratorIndependent;
+import ifis.skysim2.data.sources.PointSourceRAM;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Experiment2Distribtions {
+	
+	public static void main(String args[]) {
+		printDistribution("indep");
+		printDistribution("corr");
+		printDistribution("acorr");
+	}
+
+	public static void printDistribution(String name) {
+		DataGenerator dg;
+		if (name.equals("indep")) {
+			dg = new DataGeneratorIndependent();
+		}
+		else if (name.equals("corr")) {
+			dg = new DataGeneratorBKS01Correlated();
+		}
+		else {
+			dg = new DataGeneratorBKS01Anticorrelated();
+		}
+		PointSourceRAM data = new PointSourceRAM(2, dg.generate(2,10000));
+		for (int i = 0; i < data.size(); ++i) {
+			System.out.print(i);
+			for (float val: data.get(i)) {
+				System.out.print(" " + val);
+			}
+			System.out.println();
+		}
+	}
+}

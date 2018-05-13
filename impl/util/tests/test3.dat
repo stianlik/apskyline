@@ -1,0 +1,21 @@
+# Created by Octave 3.6.3, Fri Apr 05 16:09:54 2013 CEST <stianlik@stianlik-x1>
+
+# name: test
+# type: scalar struct
+# length: 3
+
+# name: name
+# type: string
+# elements: 1
+# length: 1
+C
+
+# name: value
+# type: scalar
+12
+
+# name: result
+# type: matrix
+# rows: 1
+# columns: 10
+125 200 150 140 100 500 0 200 140 340

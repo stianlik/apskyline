@@ -1,0 +1,72 @@
+#!/usr/bin/octave -qf
+source('plotlib.m')
+%
+% MAIN
+%
+
+warning('off')
+
+% Prepare command line arguments
+if length(argv()) < 3
+	printf('Insufficient arguments\n')
+	printf('USAGE: %s OUTFILE GRAPHTYPE INPUTFILES\n', program_invocation_name);
+	printf('- GRAPHTYPE = time | errorbar | speedup\n');
+	printf('- INPUTFILES must be named by convention TESTNAME_XPOS (XPOS determines order)\n');
+	printf('- OUTFILE will be blaced in ../../doc/experiments/') 
+	exit(1)
+end
+type = argv(){2};
+files = argv()(3:end);
+
+% Load data
+global testdata = {};
+loadResults(files); 
+
+% Plot results
+if strcmp(type, 'normal') == 1
+	plotResults('Thread count', 'Time (seconds)', 'normal');
+elseif strcmp(type, 'errorbar') == 1
+	plotResults('Thread count', 'Time (seconds)', 'errorbar');
+elseif strcmp(type, 'speedup') == 1
+	plotResults('Thread count', 'Speedup', 'speedup');
+elseif strcmp(type, 'diff') == 1
+	plotResults('Thread count', 'difference', 'diff');
+elseif strcmp(type, 'skyline_size') == 1
+	plotResults('Thread count', 'Size of skyline', 'skyline_size');
+elseif strcmp(type, 'apskyline') == 1
+	plotResults('Thread count', 'Time (seconds)', 'apskyline');
+elseif strcmp(type, 'segmented') == 1
+	plotResults('Thread count', 'Time (seconds)', type);
+elseif strcmp(type, 'time_minus_partitioning') == 1
+	plotResults('Thread count', 'Time (seconds)|', type);
+elseif strcmp(type, 'speedup_minus_partitioning') == 1
+	plotResults('Thread count', 'Speedup', type);
+elseif strcmp(type, 'time_partitioning') == 1
+	plotResults('Thread count', 'Time (seconds)', type);
+elseif strcmp(type, 'time_merge') == 1
+	plotResults('Thread count', 'Time (seconds)', type);
+elseif strcmp(type, 'dimensionality') == 1
+	plotResults('Dimensions', 'Time (seconds)', type);
+elseif strcmp(type, 'dimensionality_segmented') == 1
+	plotResults('Dimensions', 'Time (seconds)', 'segmented');
+elseif strcmp(type, 'cardinality') == 1
+	translateTicks([ 50e3 100e3 500e3 1e6 5e6 10e6 15e6 ], { '50k', '100k', '500k', '1M', '5M', '10M', '15M' });
+	plotResults('Cardinality', 'Time (seconds)', 'dimensionality');
+elseif strcmp(type, 'cardinality_segmented') == 1
+	translateTicks([ 50e3 100e3 500e3 1e6 5e6 10e6 15e6 ], { '50k', '100k', '500k', '1M', '5M', '10M', '15M' });
+	plotResults('Cardinality', 'Time (seconds)', 'segmented', 1, 10);
+elseif strcmp(type, 'cardinality_perstyple') == 1
+	translateTicks([ 50e3 100e3 500e3 1e6 5e6 10e6 15e6 ], { '50k', '100k', '500k', '1M', '5M', '10M', '15M' });
+	plotResults('Cardinality', 'Time per skyline tuple (\mus)', 'perstuple', 1, 10);
+elseif strcmp(type, 'distribution') == 1
+	translateTicks([ 1 2 3 ], { 'Anti-Correlated', 'Correlated', 'Independent' });
+	plotResults('Distribution', 'Time (ms)', 'distribution');
+elseif strcmp(type, 'distribution_segmented') == 1
+	translateTicks([ 1 2 3 ], { 'Anti-Correlated', 'Correlated', 'Independent' });
+	plotResults('Distribution', 'Time (seconds)', 'segmented');
+else
+	error('Invalid graph type');
+end
+
+% Write results
+printPlot(cstrcat('../../doc/experiments/', argv(){1}, '.pdf'));

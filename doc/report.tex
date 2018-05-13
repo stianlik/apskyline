@@ -1,0 +1,3501 @@
+%\documentclass[12pt,a4paper]{report}
+\documentclass[12pt,a4paper,twoside]{report}
+\raggedbottom % Fiks for teit twoside-strekking av tekst
+\usepackage{report}
+\begin{document}
+
+\title{Database operations on multi-core processors}
+\author{Stian Liknes\\IDI, NTNU\\stianlik@gmail.com}
+
+\cleardoublepage
+\begin{titlepage}
+\section*{Problem description}
+
+With the trend of increasingly parallel processor architectures, we
+aim to investigate how these can be utilized in database queries. The
+task is to study existing techniques for performing database queries
+using multi-core processors, development of new algorithms, and
+experimental evaluation.
+
+Assignment given: 15 January 2013 \\
+Supervisor: Kjetil Nørvåg
+\end{titlepage}
+\cleardoublepage
+\begin{titlepage}
+\begin{center}
+\vspace*{\fill}
+
+\textsc{\LARGE TDT4900 - Datateknikk og informasjonsvitenskap, masteroppgave}\\[1.5cm]
+\textsc{\large Spring 2013}\\[1.5cm]
+
+\Huge \bfseries Database Operations on Multi-Core Processors\\[1.5cm]
+
+{\large
+\emph{Author:}\\
+Stian Liknes\\[0.5cm]
+
+\emph{Supervisor:}\\
+Kjetil Nørvåg\\[0.5cm]
+}
+
+\vspace{\fill}
+\end{center}
+\end{titlepage}
+
+\cleardoublepage
+\begin{titlepage}
+\begin{poliabstract}{Abstract}
+
+The focus of this thesis is on investigating efficient database algorithms
+and methods for modern multi-core processors in main memory environments.
+We describe central features of modern processors in a historic perspective
+before presenting a number of general design goals that should be
+considered when optimizing relational operators for multi-core
+architectures. Then, we introduce the skyline operator and related
+algorithms, including two recent algorithms optimized for multi-core
+processors. Furthermore, we develop a novel skyline algorithm using an
+angle-based partitioning scheme originally developed for parallel and
+distributed database management systems. Finally, we perform a number of
+experiments in order to evaluate and compare current shared-memory skyline
+algorithms.
+
+Our experiments reveals some interesting results. Despite of having an
+expensive pre-processing step, the angle-based algorithm is able to
+outperform current best-performers for multi-core skyline computation.
+In fact, we are able to outperform competing algorithms by a factor of
+5 or more for anti-correlated datasets with moderate to large
+cardinalities. Included algorithms exhibit similar performance
+characteristics for independent datasets, while the more basic
+algorithms excel at processing correlated datasets. We observe similar
+performance for two small real-life datasets. Whereas, the angle-based
+algorithm is more efficient for a work-intensive real-life dataset
+containing more than 2M 5-dimensional tuples.
+
+Based on our results we propose that database research targeted at
+shared-memory systems is focused not only on basic algorithms but also
+more sophisticated techniques proven effective for parallel and
+distributed database management systems. Additionally, we emphasize
+that modern processors have very fast inter-thread communication
+mechanisms that can be exploited to achieve parallel speedup also for
+synchronization-heavy algorithms.
+
+\end{poliabstract}
+\end{titlepage}
+
+\cleardoublepage
+\begin{titlepage}
+\begin{poliabstract}{Sammendrag}
+
+Fokuset i denne oppgaven er å forske på effektive algoritmer og
+metoder rettet mot moderne flerkjernearkitekturer i en
+databasesammenheng. Vi beskriver sentrale aspekter ved moderne
+prosessorer i et historisk perspektiv, før vi presenterer en rekke
+generelle konstruksjonsmål for relasjonsoperatorer i
+flerkjernesystemer.  Deretter beskriver vi skyline-operatoren med
+relaterte algoritmer og utvikler en ny skyline-algoritme som bruker en
+vinkelbasert partisjoneringsmetode nylig publisert i sammenheng med
+parallelle og distribuerte databasesystemer. Avslutningsvis gjør vi en
+rekke eksperimenter for å evaluere og sammenligne skyline-algoritmer
+kjørt på moderne prosessorer.
+
+Til tross for et tidskrevende preprosesseringstrinn, er den
+vinkelbaserte algoritmen i stand til å utkonkurrere de meste effektive
+skyline-algoritmene optimalisert for flerkjerneprosessorer.  Faktisk
+er vi i stand til å utkonkurrere den beste algoritmen med en faktor på
+fem eller mer for anti-korrelerte datasett med moderate til store
+kardinaliteter.  Algoritmene oppnår lignende ytelseskarakteristikker
+for datasett med uavhengig distribusjon, mens de mer grunnleggende
+algoritmene utmerker seg ved behandling av korrelerte datasett.
+Samtlige algoritmer oppnår noenlunde lik ytelse for to små
+ikke-syntetiske datasett, mens den vinkelbaserte algoritmen er mer
+effektiv for et arbeidskrevende ikke-syntetisk datasett.
+
+Basert våre resultater, foreslår vi at databaseforskning relatert til
+flerkjernesystemer ikke bare fokuseres på grunnleggende algoritmer,
+men også på mer omfattende teknikker fra parallelle og distribuerte
+databasesystemer. I tillegg understreker vi at moderne prosessorer er
+veldig effektive på kommunikasjon mellom parallelle tråder, og dermed
+bedre egnet til parallell utførelse av synkroniseringstunge algoritmer
+enn mer tradisjonelle parallelle og distribuerte systemer.
+
+\end{poliabstract}
+\end{titlepage}
+
+\cleardoublepage
+\tableofcontents
+\thispagestyle{empty}
+
+%\cleardoublepage
+%\listoffigures
+%\thispagestyle{empty}
+
+\cleardoublepage
+\setcounter{page}{1}
+\chapter{Introduction}
+\label{chap:introduction}
+
+Algorithms used in databases management systems (DBMS) have
+traditionally focused on external factors like I/O-operations. Disk
+access is an order of magnitude slower than memory access and
+minimizing I/O-access is a necessity working on datasets exceeding
+main memory capacity. However, a rapid increase in main memory
+capacity are making memory based algorithms more relevant.
+
+There are two main areas for memory based algorithms in database
+systems: main memory database management systems (MMDB) and disk
+resident database management systems (DRDB) with very large caches.
+MMDBs keep all data in memory and thereby completely avoid the I/O
+bottleneck, consequently traditional algorithms can not be regarded as
+optimal for these systems without close examination. Main memory
+bandwidth and compute capacity are becoming dominant factors in
+algorithm performance. In addition, DRDBs with large caches can
+complete many operations without intermediate I/O-access. This leads
+to a need for algorithms that use memory bandwidth efficiently and are
+capable of optimal cache patterns without making compromises to
+minimize I/O access.
+
+For a long time, processor manufacturers increased compute power by
+increasing the operating frequency and placing transistors closer
+together. Unfortunately, this is no longer an option, because
+increasing operating frequency further achieves diminishing
+performance gains compared to associated power requirements. The
+so-called power wall has been reached, and processor manufacturers
+have been forced to find other ways to utilize chip-transistors.
+Nevertheless, Moore's law is still valid, the number of transistors
+per chip continue to increase. To better utilize these resources
+manufacturers have started increasing the number of cores per
+processor. This is an efficient method of increasing compute power
+without exponentially increasing the processors power consumption.
+
+Another trend is that processors are providing greater capacity for
+data parallelism in the form of single instruction multiple data
+(SIMD) processing. SIMD allows one operation to be performed for
+multiple inputs without additional CPU cycles, e.g. multiply four
+values at the price of one. For instance both Intel and AMD are
+supporting streaming SIMD extensions 4 (SSE4), providing many
+opportunities for data parallelism. Currently, general purpose
+processors have limited SIMD support, SSE4 supports signed
+multiplication of no more than four 32-bit integers in one operation.
+However, a speedup of four in an inner loop, with practically no
+increase in work are definitely worth pursuing. By combining task- and
+data parallelism, one can achieve significant performance gains in
+suitable algorithms. 
+
+In \cite{stonebraker1986case}, Stonebraker compares the three primary
+parallel architectures: shared-memory (SM), shared-disk (SM), and
+shared-nothing (SN). In SM systems, all processors (or cores) share a
+common central memory. Each processor in a SM system has private
+memory, while all processors share a collection of one or more
+external disks. For SN systems, nothing is shared, this is the case of
+distributed systems and have been the primary focus in database
+management systems (DMBS). Stonebraker argued that SM systems did not
+scale to a large number of processors, hence they were less
+interesting than the other systems. He also observed that SD systems
+does not excel in any area compared to the other two, and concluded
+that SN systems is the primary target for DBMS. Not only did SN show
+the best characteristics for scaling, it also matched the current
+marketplace interest, distributed database management systems. At the
+time (1985), this was the obvious contender for further research.
+However, with recent trends in processor- and memory development, SM
+systems are becoming more prominent. Multi-core processors are
+highly-popular SM systems, and developers must resort to SM
+programming to utilize the increasing parallel compute capacity.
+
+The increased interest in SM programming has led to an number of
+frameworks \cite{membarth2011frameworks} to help programmers gradually
+parallelize existing algorithms, and to develop completely new
+methods. These frameworks address some of the issues mentioned by
+Stonebraker in \cite{stonebraker1986case}, for instance, frameworks
+provide practical solutions for concurrency control and management of
+hot spots. OpenMP is a popular choice for incrementally adding
+parallelism to an algorithm, this framework allows the developer to
+tag parallel regions as parallel using compiler directives. Critical
+sections can be tagged as critical to provide a simple concurrency
+control.
+
+Memory based databases are also obtaining increased interest.
+Commercial products like IBM solidDB and Oracle TimesTen are examples
+of high-performance relational MMDBs in use today. By managing data in
+memory, and optimizing data structures and access algorithms
+accordingly, database operations execute with maximum efficiency,
+achieving dramatic gains in responsiveness and throughput
+\cite{oracle2012timesten}.
+ 
+For the join operator, Blanas et al. \cite{blanas2011design} evaluate
+hash based algorithms \cite{bratbergsengen1984hashing} in a
+shared-memory context and find that algorithms are most efficient with
+no pre-partitioning. This somewhat surprising, because the
+partitioning phase improves cache locality for subsequent phases
+\cite{shatdal1994cache}, thereby increasing algorithm performance in a
+sequential system. Similar results are reported in
+\cite{park2009parallel}, where they achieve impressive performance
+using a linear partitioning scheme instead of exploiting well-known
+geometric properties for multi-core \footnote{We use the terms
+multi-core and shared-memory interchangeably to describe a multi-core
+shared-memory system} skyline computation.  However, the
+compute-intensive skyline algorithm has not yet been tested with a
+sophisticated partitioning technique in the multi-core context. 
+
+In this thesis we explore the multi-core landscape in a database
+context by developing and evaluating a novel algorithm for the skyline
+operator. Furthermore, we perform several experiments in order to
+evaluate and compare the current best-performing skyline algorithms
+optimized for multi-core architectures. Based on our results, we
+perform the first comprehensive comparison between current multi-core
+skyline algorithms, revealing some interesting characteristics along
+the way. We address the following research questions:
+
+\begin{description}
+	\item[RQ1] How can we efficiently exploit multi-core architectures
+	when implementing database operators? Are there cases where this
+	is impossible?
+	\item[RQ2] How can we determine if an algorithm or an operator is
+	viable for multi-core optimizations? 	
+	\item[RQ3] Is it reasonable to regress into more basic algorithms
+	in order to exploit the increasing parallel compute power in
+	modern processors?
+	\item[RQ4] Can pre-processing techniques from parallel and
+	distributed systems be efficient in a shared-memory context where
+	inter-thread communication is an order of magnitude less
+	expensive?  
+\end{description}
+
+The thesis is organized as follows. First, modern processor
+architectures are described in a historical perspective, and a number
+of design goals for multi-core algorithms in a database context are
+presented. Second, the skyline operator is introduced with associated
+sequential and parallel algorithms. Third, we develop an efficient
+algorithm for skyline computation based our design goals.  Fourth, we
+compare our algorithm to state-of-the-art skyline algorithms developed
+for multi-core architectures using a variety of experiments, and
+discuss the implication of the results. Finally, we present our
+conclusions, and suggest a direction for further research.
+
+\chapter{Modern processor architectures}
+
+{ % Scope for defining local drawing functions
+	
+	In this chapter, we introduce modern processor architectures and
+	suggest a number of design goals that should be considered when
+	developing database algorithms for multi-core processors.
+
+	\section{von Neumann architecture}
+
+	Modern processors are increasingly complex constructions, and come
+	in many forms. Vendors like Intel, Sun and ARM have focused on
+	different markets and optimized their architectures for a range of
+	uses (desktop, mobile, server, and so on). However, most of the
+	architectures use a similar architecture based on the von Neumann
+	architecture \cite{von1993first} shown in Figure \ref{fig:neumann}.
+
+	%\floatstyle{boxed}
+	%\restylefloat{figure}
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			scale=1.2, 
+			unit/.style={rectangle,draw,minimum height=12mm,minimum width=24mm},
+			accumulator/.style={rectangle,draw}
+		]
+			%\draw[help lines,green] (0,0) grid (10,10);
+
+			\node (memory) at (2.5,9.5) [unit, minimum width=60mm] {Memory};
+			\node (cu) at (1,7.5) [unit] {CU};
+			\node (alu) at (4,7.5) [unit] {ALU};
+			\node (input) at (7,8.5) [unit] {Input};
+			\node (output) at (7,6.5) [unit] {Output};
+
+			\draw [->] (input.west) |- +(-0.5,0) |- ([shift=({0,0.25})]alu.east);
+			\draw [->] ([shift=({0,-0.25})]alu.east) |- +(0.5,0) |- (output.west);
+			\draw [->] ([shift=({-2,0})]memory.south) -- ([shift=({-0.5,0})]cu.north);
+			\draw [<-] ([shift=({-1,0})]memory.south) -- ([shift=({0.5,0})]cu.north);
+			\draw [->] ([shift=({1,0})]memory.south) -- ([shift=({-0.5,0})]alu.north);
+			\draw [<-] ([shift=({2,0})]memory.south) -- ([shift=({0.5,0})]alu.north);
+		\end{tikzpicture}
+		\caption{von Neumann architecture}
+		\label{fig:neumann}
+	\end{figure}
+
+	The von Neumann architecture consists of a control unit and an
+	arithmetic logic unit (ALU). The control unit (CU) fetches the
+	code of all the instructions in the program and directs the
+	operation of the ALU. Meanwhile, the ALU does the actual
+	calculation. The input and output units are allows a person to
+	interact with the machine using registers. Program and data is
+	stored in the memory unit.  Due to the fact that the architecture
+	is sequential in nature, and has a well known data transfer
+	bottleneck, it is not used in practice without modifications. It
+	is described here as a basis for the more complex architectures.
+
+	To overcome the von Neumann bottleneck, the shared data and
+	instruction bus has been replaced by multiple buses (in a simple
+	architecture there are typically three buses: instruction, data,
+	and control). By using multiple buses, instructions and data can
+	be fetched from memory simultaneously, resulting in a significant
+	performance boost.
+
+	\newcommand{\drawInstr}[2]{
+		\begin{scope}[shift={(#1*2,#2)}]
+			\draw (0,5) rectangle (2,4);
+			\node at (1,4.5) {F};
+			\draw (2,5) rectangle (4,4);
+			\node at (3,4.5) {D};
+			\draw (4,5) rectangle (6,4);
+			\node at (5,4.5) {E};
+			\draw (6,5) rectangle (8,4);
+			\node at (7,4.5) {W};
+		\end{scope}
+	}
+	
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[scale=0.5]
+			%\draw[help lines,green] (0,0) grid (24,5);
+
+			\draw[->] (0,5) -- (0,0);
+			\draw[->] (0,5) -- (26,5);
+			\node[rotate=90] at (-1,2.5) {Instructions};
+			\node[above] at (13,5) {Clock cycles};
+
+			\foreach \x in {0,1,2} 
+				\drawInstr{4*\x}{-\x};
+		\end{tikzpicture}
+		\caption{Instruction flow of a sequential processor. The
+		letters F, D, E, W indicates fetch, decode, execute,
+		writeback respectively}
+		\label{fig:no-pipeline}
+	\end{figure}
+
+	\section{Cache structures}
+
+	In order to decrease latency and contention while accessing data,
+	modern processors use deep cache hierarchies. Both instructions
+	and data are cached close to the processing unit so that
+	frequently used data can be read without slow memory operations.
+	Figure \ref{fig:multi-core-arch} shows a processor with two level
+	caching, L1 is smaller and faster than L2, which is smaller and
+	faster than main memory. Processors use both temporal and spatial
+	locality to determine which values should be placed in cache. 
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			auto,
+			scale=0.8, 
+			data/.style={rectangle,draw,minimum height=8mm,minimum width=60mm},
+			tag/.style={rectangle,draw,minimum height=8mm,minimum width=16mm},
+		]
+			%\draw[help lines,green] (0,0) grid (10,10);
+
+			\newcommand{\drawLine}[2]{
+				\begin{scope}[shift=#2]
+					\node [above right] (#1-tag) at (0,0) [tag] {Tag \i};
+					\node [above right] (#1-data) at (2,0) [data] {Data \i};
+				\end{scope}
+			}
+
+			\foreach \i in {0,1,2,3} {
+				\drawLine{line\i}{({0,4-\i*1.0})};
+			}
+			\node [above=1mm,shift=({-0.8,0})] at (line0-data.north) {Cache lines};
+
+			\begin{scope}[shift=({-1,0})]
+				\node [above right] (address-lower) at (-7,4) [tag, minimum width=32mm] {Higher bits};
+				\node [above right] (address-higher) at (-3,4) [tag] {Lower bits};
+				\node [above,shift=({0.8,0})] at (address-lower.north) {Memory address};
+				\node [below=20mm] (op) at (address-lower.south) [draw,circle] {=};
+				\node [below=10mm, right=40mm] (hit) at (op.south) {Hit: Use data from cache line 2};
+				\node [below=18mm, right=40mm] (miss) at (op.south) {Miss: Fetch data from memory into cache line 2};
+				\draw [->] (address-higher) to [bend right]  node {index} (line2-tag.west);
+				\draw [->] (line2-tag.west) to [bend right=10](op.45);
+				\draw [->] ([shift=({-1,0})]address-lower.south) to [bend right] (op.135);
+				\draw [->] (op) to [bend right] (hit.west);
+				\draw [->] (op) to [bend right] (miss.west);
+			\end{scope}
+
+		\end{tikzpicture}
+		\caption{Cache lookup. Line is first found using the lower bits as an
+		index into cache, higher parts of memory address is subsequently
+		compared with tag to determine if a match is found}
+		\label{fig:cache-lines}
+	\end{figure}
+	
+	Data is transferred from main memory to cache in blocks (i.e.
+	cache lines) to ensures spatial locality, values close to each
+	other are fetched at the same time and put in the same location
+	(even if they have not been requested yet), see Figure \ref{fig:cache-lines}. Temporal
+	locality is ensured by keeping recently addressed data in cache.
+	Typically a cache allows data from a particular memory address to
+	be placed at a handful of predetermined cache lines, allowing very
+	fast lookups. A potential problem with this technique is cache
+	conflicts: If a program repeatedly access two memory locations
+	which happen to map to the same cache line, the cache must keep
+	storing and loading from main memory and the cache hierarchy
+	actually decrease overall performance. To avoid this problem, most
+	processors use set-associative caches, where each memory location
+	can map to a number of different cache lines. However, cache
+	conflicts are still possible, therefore one needs to consider
+	locality and association when developing performance critical
+	code.
+
+	\section{Instruction-level parallelism}
+
+	An issue with the von Neumann model that it is using an inherently
+	sequential execution model. Instructions are executed one after
+	another as depicted in Figure \ref{fig:no-pipeline}. By closer
+	examination, one will notice that each instruction has at least
+	four steps, fetch, decode, execute, and writeback. Modern
+	processors use pipelined execution to perform each step in
+	parallel as depicted in Figure \ref{fig:pipeline}.  This method is
+	referred to as instruction-level parallelism (ILP) and has been
+	widely used since the 1970s.  Deeper pipelines can be constructed
+	by further subdividing instructions and use so-called
+	superpipelining.  However, subdividing instructions has a cost,
+	therefore it is uncommon to have very deep pipelines. Because the
+	execute step actually consists of a number of different operations
+	such as floating-point and integer calculation, performance can
+	also be increased using superscalar pipelining. That is, executing
+	multiple instructions in parallel, each in its own functional
+	unit. Today, virtually every processor is
+	superpipelined-superscalared.
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[scale=0.5]
+			%\draw[help lines,green] (0,0) grid (24,5);
+
+			\draw[->] (0,5) -- (0,0);
+			\draw[->] (0,5) -- (26,5);
+			\node[rotate=90] at (-1,2.5) {Instructions};
+			\node[above] at (13,5) {Clock cycles};
+
+			\foreach \x in {0,1,2} {
+				\drawInstr{\x}{-\x};
+			}
+		\end{tikzpicture}
+		\caption{Instruction flow of a pipelined processor. The
+		letters F, D, E, W indicates fetch, decode, execute,
+		writeback respectively}
+		\label{fig:pipeline}
+	\end{figure}
+
+	ILP is a great advance from the vanilla von Neumann model, but it
+	is has some issues. The main limiting factors for ILP is
+	instruction dependencies and branches. Instructions that depend on
+	each other can not be executed in parallel, and will not
+	experience any performance gain from pipelining. For branching
+	instructions, the processor has no way of knowing which operation
+	will be next and can not load the relevant instruction into the
+	pipeline before the branch has been resolved. To overcome the
+	branching issue, processors typically use some form of branch
+	prediction algorithm to load the most likely instruction. This
+	instruction is executed in the pipeline, and if the prediction was
+	correct the processor can continue as normally. If the prediction
+	was wrong, however, the processor have just wasted a bunch of
+	cycles and has to go back to the branch and perform the correct
+	instruction. An approach to avoid the branching problem is to use
+	predicated instructions like conditional move. Predicated
+	instructions are executed as normal, but will only commit itself
+	if condition is true. In any case, ILP will have unused cycles
+	when one instruction is waiting for a branch or dependency. This
+	is somewhat alleviated using out-of-order execution (OOE; instructions
+	are reordered to allow for improved ILP processing), but OOE is an
+	expensive solution and only provides a limited speedup.
+
+
+	\section{Task parallelism}
+
+	Simultaneous multithreading (SMT; or Hyper-Threading) have been
+	introduced to further increase available resources. If additional
+	instructions are not available from the current thread,
+	instructions from other (independent) threads can be placed in the
+	pipeline and execute in parallel. To achieve this, processors
+	typically present one physical processor core as two or more
+	logical processors to the operating system. SMT is relatively
+	cheap to implement and, in some cases, introduce an significant
+	performance gain. A weakness of this technique is that multiple
+	threads executed on the same core may cause contention for some
+	resources (like the bus and cache structures), this can limit
+	performance gain, or in the worst case reduce overall performance.
+
+	Multi-core processors are similar to SMT in that multiple threads
+	can run in parallel. However, in multi-core processors, the entire
+	core is duplicated, including registers and cache, see Figure \ref{fig:multi-core-arch}.
+	This solves the contention problem in many cases, but shared
+	components are not eliminated entirely and some contention can
+	still occur (e.g. shared-memory bus and lower level cache).  To
+	allow cores to communicate, lower level cache is normally shared,
+	while keeping higher level cache private. There are many
+	variations of this scheme, some processors may have completely
+	independent cores, not sharing any cache. Processors can also
+	combine SMT and multi-core in creative ways, like the AMDs
+	Bulldozer design where the processor includes multiple
+	independent cores for integer operations, and shared units for
+	floating-point operations.
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			scale=1.0, 
+			unit/.style={rectangle,draw,minimum height=10mm,minimum width=20mm},
+		]
+			%\draw[help lines,green] (0,0) grid (16,16);
+
+			\node [above right] (processor) at (1, 2.25) [unit, minimum width=120mm,minimum height=55mm] {};
+			\node [below right] at (processor.north west) {Processor};
+			\node [above,shift=({0,0.25})] (l2) at (processor.south) [unit, minimum width=115mm] {L2 cache};
+			\node [below,shift=({0,-0.5})] (interconnect) at (processor.south) [unit, minimum width=120mm] {Interconnect};
+			\node [below,shift=({0,-0.5})] (memory) at (interconnect.south) [unit, minimum width=120mm] {Memory};
+
+			\newcommand{\drawCore}[2]{
+				\begin{scope}[shift=#1]
+					\node (core#2-l1) at (0,-1) [unit] {L1 cache};
+					\node (core#2-cpu) at (0,0.5) [unit] {PU};
+					\node [above right] (core#2) at (-1.25, -1.75) [unit,minimum width=25mm,minimum height=33.5mm] {};
+					\node [below right] at (core#2.north west) {Core #2};
+					\draw [<->] (core#2-l1) -- (core#2-cpu);
+				\end{scope}
+			}
+
+			\foreach \i in {0,1,2,3} {
+				\drawCore{({2.5+\i*3,5.5})}{\i};
+				\node [below right, shift={(1.23+\i*3,0)}] (tmp) at (l2.north west) [point] {};
+				\draw [<->] (core\i-l1.south) -- (tmp);
+			}
+
+			\draw [<->] (l2) -- (interconnect);
+			\draw [<->] (interconnect) -- (memory);
+		\end{tikzpicture}
+		\caption{Multi-core processor with shared L2 cache and uniform memory
+		access. PU is short for processing unit, including fetch, decode,
+		execute and writeback components}
+		\label{fig:multi-core-arch}
+	\end{figure}
+
+	\section{Data parallelism}
+	\label{sec:data-parallelism}
+
+	Techniques to exploit parallel potential mentioned thus far have
+	focused mainly on task parallelism, that is to execute different tasks in
+	parallel. Another approach is to look for ways to perform the same
+	operation on multiple values in parallel to induce data
+	parallelism. This idea was extensively used in the old
+	supercomputers, with special purpose processors. It is commonly
+	called vector processing, or single instruction, multiple data
+	(SIMD) and have been increasingly integrated into modern
+	processors. SIMD operations are available for a subset of the
+	operations supported by a processor and, in most cases, has to be
+	explicitly programmed. The end result is that multiple values
+	processed using SIMD can be performed the same number of CPU
+	cycles as a single value without SIMD, see Figure \ref{fig:simd}. 
+	
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			scale=1.0, 
+			unit/.style={rectangle,draw,minimum height=8mm,minimum width=24mm}
+		]
+			\foreach \i in {1,2,3,4} {
+				\node [above right] (\i op\i) at (2.4*\i,-0.5) [unit] {X\i\ op Y\i};
+				\node [above=4.5mm] (op\i) at (\i op\i.north) [circle,draw] {op};
+				\node [above right,shift=({0,2.25})] (x\i) at (2.4*\i,0) [unit] {X\i};
+				\node [above right,shift=({0,3.25})] (y\i) at (2.4*\i,0) [unit] {Y\i};
+				\draw [->] ([shift=({0.6, 0})]x\i.south) to (op\i);
+				\draw [->] ([shift=({-0.6, 0})]y\i.south) to (op\i);
+				\draw [->] (op\i) -- (\i op\i);
+			}
+		\end{tikzpicture}
+		\caption{SIMD operator to process four values in one cycle}
+		\label{fig:simd}
+	\end{figure}
+
+	SIMD operations are implemented based on observations like the fact that
+	four 8 bit additions can be performed using a modified 32 bit add. Both AMD
+	and Intel provides SIMD support in their processors which they call 3DNow!
+	and streaming SIMD extension (SSE) \cite{inteloptimization} respectively.
+
+	\section{Shared memory systems}
+
+	Multi-core processors are typically configured as a shared-memory system: a
+	collection of independent cores connected to a memory system via an
+	interconnect network. There are two principal types of shared-memory
+	systems: uniform memory access (UMA), and non-uniform memory access (NUMA)
+	\cite{pacheco}.
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			scale=1.0, 
+			unit/.style={rectangle,draw,minimum height=10mm,minimum width=80mm},
+			core/.style={rectangle,draw,minimum height=20mm,minimum width=15mm},
+			processor/.style={rectangle,draw,minimum height=30mm, minimum width=37.5mm}
+		]
+			%\draw[help lines,green] (0,0) grid (16,16);
+			\newcommand{\drawProcessor}[2]{
+				\node [above right] (processor#1) at (#2) [processor] {};
+				\node [below right] at (processor#1.north west) {Processor #1};
+				\node [above right=2.5mm] (core#1-0) at (processor#1.south west) [core] {Core 0};
+				\node [right=2.5mm] (core#1-1) at (core#1-0.east) [core] {Core 1};
+			}
+
+			\drawProcessor{0}{0,3};
+			\drawProcessor{1}{4.25,3};
+			\node [above right] (memory) at (0,0) [unit] {Memory};
+
+			\node [above=5mm] (interconnect) at (memory.north) [unit] {Interconnect};
+			\node[below] (interconnect-0) at ([shift=({-2.15,0})]interconnect.north) [point] {};
+			\node[below] (interconnect-1) at ([shift=({2.15,0})]interconnect.north) [point] {};
+
+			\draw [<->] (processor0) -- (interconnect-0);
+			\draw [<->] (processor1) -- (interconnect-1);
+			\draw [<->] (interconnect) -- (memory);
+
+		\end{tikzpicture}
+		\caption{UMA architecture with two processors}
+		\label{fig:uma-arch}
+	\end{figure}
+
+	In UMA systems all processors are connected directly to main memory,
+	see Figure \ref{fig:uma-arch}. Each core can access data from all of
+	the other cores directly. Access to all memory locations are the same
+	for each core. UMA systems main advantage in relation to NUMA systems
+	is their simplicity.
+
+	\begin{figure}[H]
+		\centering
+		\begin{tikzpicture}[
+			scale=1.0, 
+			unit/.style={rectangle,draw,minimum height=10mm,minimum width=37.5mm},
+			core/.style={rectangle,draw,minimum height=20mm,minimum width=15mm},
+			processor/.style={rectangle,draw,minimum height=30mm, minimum width=37.5mm}
+		]
+			%\draw[help lines,green] (0,0) grid (16,16);
+			\newcommand{\drawProcessor}[2]{
+				\node [above right] (processor#1) at (#2) [processor] {};
+				\node [below right] at (processor#1.north west) {Processor #1};
+				\node [above right=2.5mm] (core#1-0) at (processor#1.south west) [core] {Core 0};
+				\node [right=2.5mm] (core#1-1) at (core#1-0.east) [core] {Core 1};
+			}
+
+			\drawProcessor{0}{0,3};
+			\drawProcessor{1}{4.25,3};
+			\node [above right] (memory0) at (0,0) [unit] {Memory};
+			\node [right=22.5mm] (memory1) at (memory0) [unit] {Memory};
+
+			\node [above=5mm] (interconnect0) at (memory0.north) [unit] {Interconnect};
+			\node [above=5mm] (interconnect1) at (memory1.north) [unit] {Interconnect};
+
+			\draw [<->] (processor0) -- (processor1);
+			\draw [<->] (processor0) -- (interconnect0);
+			\draw [<->] (processor1) -- (interconnect1);
+			\draw [<->] (interconnect0) -- (memory0);
+			\draw [<->] (interconnect1) -- (memory1);
+
+		\end{tikzpicture}
+		\caption{NUMA architecture with two processors}
+		\label{fig:numa-arch}
+	\end{figure}
+
+} % end of drawing scope
+
+In NUMA systems each processor is directly connected to a block of
+main memory, and the processors can reach each others data through
+special hardware built into the processors, see Figure
+\ref{fig:numa-arch}. A memory location that a processor is directly
+connected to can be accessed faster than a memory location that must
+be accessed through another chip \cite{pacheco}. Advantages of the
+increased complexity is that the system can address a larger memory
+space, and directly memory access typically is faster than in UMA
+systems. It is common to use UMA for the cores in one processor, and
+NUMA between processors using a fast bus.
+
+It is also common for multi-core processors to include a limited
+capacity for data parallelism. Typically, there are a set of
+float-point and integer operations that can be executed simultaneously
+using specialized data structures as explained in Section
+\ref{sec:data-parallelism}
+
+\subsection{False sharing}
+\label{sec:false-sharing}
+
+False sharing is a performance-degrading usage pattern that can occur
+in systems with coherent caches. If a thread periodically access data
+that will never be altered by any other thread, but that data shares a
+cache block with data that is altered by other threads, the caching
+protocol may force the first thread to reload the whole cache line
+\cite{scott1993false}. In other words, the first thread will bear the
+caching overhead required by true shared access of a resource, despite
+of being the only thread that actually modifies the cached data.
+
+There are several techniques for avoiding false sharing. A simple
+approach is to pad data structures so that each instance is exactly
+one cache line. When two threads work on different padded data
+structures, data are placed in different cache lines, thus avoiding
+false sharing. Another technique is to keep a thread private copy of
+the data being worked on. In most divide-and-conquer based algorithms,
+the latter occurs automatically by data partitioning.
+
+\section{Algorithm design}
+\label{sec:algorithm-design}
+
+Shared-nothing is by far the dominating architecture in parallel and
+distributed database management systems today
+\cite{pavlo2012skew,zhou2012advanced,vlachou2008efficient,thomson2012calvin}.
+However, recent advances in processor technology are leading to a new
+generation of algorithms based on shared-everything in-memory
+processing \cite{albutiu2012massively,ye2011scalable,krueger2011fast}.
+
+%These algorithms are designed to utilize the increasing compute power
+%of parallel compute cores in modern processor architectures and the
+%substantial increases in main memory capacity.
+
+Multi-core processors are most efficient for CPU-intensive tasks that
+require little synchronization. However, multi-core processors are
+also efficient for inter-thread communication
+\cite{meneghin2012performance}. Specifically, Meneghin et al.  shows
+that fine grained parallelism, with unit of work in the order of a few
+microseconds, can be implemented efficiently on modern architectures.
+This indicates that algorithms should be able to utilize shared data
+structures for CPU-intensive tasks. In order to develop efficient
+algorithms optimized for modern processor architectures, we propose
+the following design goals:
+
+\begin{description}
+
+	\item[Paralleism] To utilize the potential of multiple cores, it
+	is essential that algorithms are designed with a high degree of
+	parallelism. Independent tasks should be identified and executed
+	in parallel wherever possible. In the terms of Amdahl's law
+	\cite{amdahl1967validity, hill2008amdahl}, we would like to
+	maximize the parallel part of the algorithm so that we are be able
+	to utilize an great number of parallel cores.
+
+	\item[Scalability] Algorithms should scale up to a large
+	number of threads \cite{kumar1991analysis}. It should not be
+	necessary to modify algorithms to support an increased number
+	of cores.
+
+	\item[Communication] Communication between different threads
+	of execution will generally reduce the parallel portion of an
+	algorithm due to synchronization costs and should be limited.
+	However, in some cases shared data structures can be used to
+	reduce memory requirements or to avoid expensive merging
+	phases. Shared data structures should not be discarded without
+	carefully considering the performance impact of an alternative
+	solution.
+
+	\item[Memory] Memory bandwidth, volume, and locality should always
+	be considered when designing an algorithm
+	\cite{grunwald1993improving}. Generally, one should limit
+	bandwidth and volume as much as possible, avoid random
+	reading/writing, and place related data close together to achieve
+	good data locality. Additionally, threads should be designed to
+	avoid cache-conflicts. Specifically, threads should avoid writing
+	to memory areas close to memory areas written by other threads. It
+	is often an advantage to keep a private copy of the data being
+	worked on in each thread in order to avoid false sharing.
+
+	\item[Fairness] Workloads should be evenly distributed among
+	available threads. In a worst-case scenario, one thread is
+	assigned all of the work, making it impossible to exploit any
+	parallel compute power.
+
+\end{description}
+
+Note that we did not include IO-operations in the proposed design
+goals. This is because we target in-memory computations, where all
+data is placed exclusively in main memory, making IO-operations
+irrelevant. This is consistent with trends in shared-memory database
+research, and is useful for evaluating algorithms targeted at systems
+with an increasingly large main memory capacity.
+
+\cleardoublepage
+\chapter{The skyline operator}
+
+\label{chap:skyline}
+
+Consider a database containing price and locality information
+about hotels. If a user wants to find the cheapest hotel that is
+closest to the city centre, the DBMS cannot always return one
+simple answer. The price typically increase as distance decrease,
+leaving the user with multiple possibilities that are equally
+"good" as illustrated in Figure \ref{skyline}. No matter how the
+user weigh his personal references towards price or distance, the
+best hotel will be placed in the skyline (the dashed line in
+Figure \ref{skyline}). Specifically, the best hotel will be as
+good or better than all other hotels in all dimensions.
+
+\begin{figure}[H]
+	\centering
+	\begin{tikzpicture}[scale=0.5, point/.style={inner sep=1,fill,circle}]
+		\path	node at(3,7) [point] {}
+				node at(3.5,8) [point] {}
+				node at(5,4) [point] {}
+				node (x) at(6,6) [point] {}
+				node at(6.2,5) [point] {}
+				node at(15,5) [point] {}
+				node at(13,3) [point] {}
+				node at(10,5) [point] {}
+				node at(13,7) [point] {}
+				node at(12.4,8) [point] {}
+				node (1) at (1,9.5) [point] {} 
+				node (2) at (2,7) [point] {}
+				node (3) at (4,5) [point] {}
+				node (4) at (5,3) [point] {}
+				node (5) at (10,1) [point] {}
+				node (6) at (19,0.5) [point] {};
+		\draw[right] node (skyline) at ([shift=({0.5,0.5})]1) {Skyline};
+		\draw[above right] node (hotel) at ([shift=({1,1})]x) {Hotel};
+		\draw[dashed] (1) -- (2) -- (3) -- (4) -- (5) -- (6);
+		\draw[->] (hotel) to [bend left=30] ([xshift=2mm]x);
+		\draw[->] (skyline) to [bend left=30,right=2mm] ($(1)!0.5!(2)$);
+		\draw[->] (0,0) -- (20,0) node[sloped,below,midway] {Price};
+		\draw[->] (0,0) -- (0,10) node[sloped,above,midway] {Distance};
+	\end{tikzpicture}
+	\caption{Skyline of Hotels, searching for minimal price and distance.
+	Each point indicates a hotel while the dashed line traverse all hotels
+	contained in the skyline} 
+	\label{skyline}
+\end{figure}
+
+The skyline operator selects all interesting tuples in an input
+relation, i.e. tuples which are not dominated by any other tuple
+\cite{borzsony2001skyline}. A tuple dominates another tuple if it
+is as good in all dimensions, and better in at least one. The
+skyline of a relation D is formally described in Definition
+\ref{def:skyline}, while the relationship between tuples are
+described in Definitions \ref{def:dominance} and
+\ref{def:incomparable}. The skyline operator is also known as the
+maximal vector problem
+\cite{borzsony2001skyline,godfrey2007algorithms,godfrey2005maximal},
+however, this name is rarely used in a database context.
+
+\begin{definition}
+	\label{def:dominance}
+	A tuple $p$ dominates another tuple $q$ if $p$ is as good or better
+	than $p$ in all dimensions and better than $q$ in at least one
+	dimension.  We write $p \prec q$ to mean that tuple $p$
+	dominates tuple $q$, and $p \nprec q$ to mean that tuple $p$ does
+	not dominate tuple $q$
+\end{definition}
+
+\begin{definition}
+	\label{def:incomparable}
+	A tuple $p$ is incomparable to another tuple $q$ if $q \nprec q$ and
+	$q \nprec p$. We use $p \prec\succ q$ to mean that $p$ is
+	incomparable to $q$
+\end{definition}
+
+\begin{definition}
+	\label{def:skyline}
+	For a relation D, a tuple $p \in D$ that is not dominated by
+	any other tuples $q \in D$ is considered as a skyline tuple.
+	The skyline of D consists of all skyline tuples in D
+\end{definition}
+
+In subsequent sections, we describe a number of algorithms for
+skyline computation. All of these algorithms exploit the fact
+that, when comparing two tuples $p$ and $q$, there are three
+possible outcomes: 
+
+\begin{enumerate}
+	\item $p \prec q$
+	\item $p \succ q$
+	\item $p \prec\succ q$
+\end{enumerate}
+
+In case 1, we know that $q$ is not part of the skyline because it is
+dominated by $p$, therefore $q$ can be discarded. Whereas, in case 2
+we know that $p$ is not part of the skyline and $p$ can be discarded.
+In case 3, $p$ and $q$ are incomparable, therefore we need to keep $p$
+and $q$ as potential skyline tuples until we can be sure they are a
+part of the skyline, or that they are dominated by some other tuple
+and can be discarded.
+
+\section{Sequential algorithms}
+\label{sec:skyline-algorithms}
+
+This section describes common sequential algorithms for skyline
+computation. We focus mainly on algorithms related to parallel
+methods evaluated in this thesis. However, we also include
+important state-of-the-art sequential algorithms to provide an
+overview of the subject.
+
+\subsection{Block-nested-loops}
+
+The block-nested-loops algorithm repeatedly reads the set of input
+tuples, keeping a window of incomparable tuples in main memory.
+When a tuple \textit{p} is read from the input, \textit{p} is compared
+to all tuples of the window. Based on this comparison, $p$ is either
+discarded, placed in the window or into a temporary file that will be
+considered in the next iteration \cite{borzsony2001skyline}. The
+following cases can occur:
+
+\begin{enumerate}
+
+	\item Some window tuple dominates \textit{p}. In this case,
+	\textit{p} cannot be part of the skyline and is discarded
+
+	\item One or more window tuples $q_1, \ldots, q_n$ are dominated
+	by \textit{p}. In this case, $q_1, \ldots, q_n$ cannot be part of
+	the skyline and are discarded. Furthermore, $p$ is inserted into
+	the window
+
+	\item All tuples in the window are incomparable with \textit{p}.
+	If there is room in the window, \textit{p} inserted into the
+	window. Otherwise, \textit{p}, is written to a temporary file to
+	be further processed in the next iteration
+
+\end{enumerate}
+
+At the end of each iteration, tuples that have been compared to all
+tuples written to the temporary file are guaranteed to be part of the
+skyline and can be output. Other tuples of the window can be output if
+they are not eliminated during the next iteration. Specifically, when
+we read a tuple from the temporary file, all tuples inserted to the
+window before this tuple was written to the temporary file is part of
+the skyline. In order to keep track of the order, each tuple is marked
+by a timestamp at the time they are inserted to the window or into the
+temporary file. See Algorithm \ref{alg:bnl} for a detailed description.
+
+\begin{algorithm}[H]
+	\caption{BNL}
+	\label{alg:bnl}
+	\begin{algorithmic}
+		\Require $D$ is the input relation, 
+		\Ensure $R$ contains the skyline of $D$
+
+		\State $W \leftarrow \{\}$
+		\Comment{Limited window in memory}
+		\State $T \leftarrow \{\}$
+		\Comment{Temporary file}
+		\State $A \leftarrow D$
+		\State $countIn \leftarrow 0$
+		\State $countOut \leftarrow 0$
+
+		\ForAll{$p \in A$}
+
+			\State $p.timestamp \leftarrow countOut$
+			\State $W \leftarrow W \cup \{p\}$
+
+			\ForAll{$q \in W$}
+			\Comment{Discard non-skyline tuples}
+				\If{$p \succ q$}
+					\State $W \leftarrow W - \{p\}$
+					\State \Break
+				\ElsIf{$p \prec q$}
+					\State $W \leftarrow W - \{q\}$
+				\EndIf
+			\EndFor
+
+			\If{$W\ is\ full$}
+				\Comment{Temporarily save incomparable tuples}
+				\State $T = T \cup \{p\}$
+				\State $countOut \leftarrow countOut + 1$
+			\EndIf
+
+			\If{$p\ is\ last\ tuple\ of\ D$}
+				\Comment{Load next temporary file}
+				\State $A \leftarrow T$
+				\State $T \leftarrow \{\}$
+				\State $countIn \leftarrow 0$
+				\State $countOut \leftarrow 0$
+			\EndIf
+
+			\ForAll{$r \in W$}
+				\Comment{Save results}
+				\If{$r.timestamp = countIn$}
+					\State $W \leftarrow W - \{r\}$
+					\State $R \leftarrow R \cup \{r\}$
+				\EndIf
+			\EndFor
+			\State $countIn \leftarrow countIn + 1$
+		\EndFor
+		\State $R \leftarrow R \cup W$
+	\end{algorithmic}
+\end{algorithm}
+
+Börnzsönyi et al. suggests two variants of the BNL algorithm in order
+to more quickly eliminate non-skyline tuples. The first one maintains
+the window as a self-organizing list, where dominating tuples are
+moved to the beginning of the list. The idea is that dominating tuples
+have a greater pruning power than other tuples and are more likely to
+be able to eliminate subsequently read tuples. When a new tuple is
+read, it is compared to the dominating tuples first, making it more
+likely for an early elimination. Based on the same principle, the
+second variant works by replacing tuples in the window by the most
+dominating set, thereby ensuring early eliminating of new tuples read.
+These strategies are particularly effective for skewed datasets,
+where a few tuples dominate large portions of the dataset.
+
+Algorithms of the BNL class are likely the most prominent algorithms
+for computing skylines. There have been published several algorithms
+based on the same principle
+\cite{chomicki2003skyline,selke2010highly,yuan2005efficient}, and
+the basic operation of collecting maxima during a single scan of
+the input data can be found at the core of many state-of-the-art
+skyline algorithms
+\cite{eng2003indexing,papadias2005progressive,bartolini2008efficient}.
+
+\subsection{Divide-and-conquer}
+
+The basic divide-and-conquer (D\&Q) algorithm
+\cite{borzsony2001skyline,kung1975finding,de1997computational} subsequently divides the input into
+partitions until each partition contains only one (or a few) tuples.
+When this is done, the partitions are merged to compute the overall
+skyline. The merging step removes tuples dominated by other tuples.
+Input is divided by calculating the median $m$ in some dimension and
+placing all tuples better than $m$ in the left partition, and tuples worse
+than $m$ in the right partition. There are different
+strategies for partitioning the input, however, most can be
+categorized as some form of grid partitioning as shown in Figure
+\ref{fig:gridpart}. A neat feature of this arrangement is that some
+partitions can be discarded without processing the nodes within, e.g.
+the upper right partition in Figure \ref{fig:gridpart} can be
+discarded because it is guaranteed to be dominated by all tuples in
+the lower left partition. Algorithm \ref{alg:basicdq} describes the
+basic D\&Q algorithm.
+
+\begin{figure}[H]
+	\centering
+	\begin{tikzpicture}[scale=0.5, point/.style={inner sep=1,fill,circle}]
+		\path	node at(3,7) [point] {}
+				node at(3.5,8) [point] {}
+				node at(8,4) [point] {}
+				node (x) at(6,6) [point] {}
+				node at(6.2,4) [point] {}
+				node (1) at (1,9.5) [point] {} 
+				node (2) at (2,7) [point] {}
+				node (3) at (4,1) [point] {}
+				node (4) at (3,3) [point] {};
+		\draw (10,0) -- (10,10);
+		\draw (0,10) -- (10,10);
+		\draw (0,5) -- (10,5);
+		\draw (5,0) -- (5,10);
+		\draw (2.5,2.5) node {$S_{1,1}$};
+		\draw (2.5,7.5) node {$S_{1,2}$};
+		\draw (7.5,2.5) node {$S_{2,1}$};
+		\draw (7.5,7.5) node {$S_{2,2}$};
+		\draw[->] (0,0) -- (11,0) node[sloped,below,midway] {Price};
+		\draw[->] (0,0) -- (0,11) node[sloped,above,midway] {Distance};
+	\end{tikzpicture}
+	\caption{Grid partitioning}
+	\label{fig:gridpart}
+\end{figure}
+
+Note that the basic variation achieves poor performance unless the
+entire computation can be done in main memory. The reason being that
+the input is read, partitioned, written to disk, reread to be
+partitioned again, and so on several times until a partition fits into
+main memory. This is alleviated using m-way partitioning in such a way
+that every partition is expected to fit into main memory. Instead of
+the median, $\alpha$-quantiles are computed in order to determine
+partition boundaries.
+
+\begin{algorithm}[H]
+	\caption{BasicDQ}
+	\label{alg:basicdq}
+	\begin{algorithmic}
+		\Require $D$ is a $d$-dimensional relation
+		\Ensure $R$ contains the skyline of $D$
+
+		\Function{skyline}{$M,d$}
+			\If{$|M| = 1$}
+				\State \Return $M$
+			\EndIf
+			\State $p \leftarrow median(M,d)$
+			\State $M_1, M_2 \leftarrow $\textsc{partition}$(M,d,p)$
+			\State $S_1 \leftarrow $\textsc{skyline}$(M_1,d)$
+			\State $S_2 \leftarrow $\textsc{skyline}$(M_2,d)$
+			\State \Return $S_1 \cup $\textsc{merge}$(S_1,S_2,d)$
+		\EndFunction
+
+		\Function{partition}{$M,d,p$}
+			\State $S_1 \leftarrow \{p \in M | p_d < p\}$
+			\State $S_2 \leftarrow \{q \in M | q_d \geq p\}$
+			\State \Return $S_1, S_2$
+		\EndFunction
+
+		\Function{merge}{$S_1, S_2, d$}
+			\If{$S_1 = \{p\}$}
+				\Comment{Trivial case}
+				\State \Return $\{p \in S_2 | p \nprec q\}$
+			\ElsIf{$S_2 = \{q\}$}
+				\State $R \leftarrow S_2$
+				\ForAll{$p \in S_1$}
+					\If{$p \prec q$}
+						\State \Return $\{\}$
+					\EndIf
+				\EndFor
+				\State \Return $S_2$
+			\ElsIf{$d = 2$}
+				\Comment{Low dimension}
+				\State $min \leftarrow minimum(S_1,d-1)$
+				\State \Return $\{q \in S_2 | q_1 < min\}$
+			\Else
+				\Comment{General case}
+				\State $p \leftarrow median(S_1,d-1)$
+				\State $S_{1,1},S_{1,2} \leftarrow $\textsc{partition}$(S_1,d-1,p)$
+				\State $S_{2,1},S_{2,1} \leftarrow $\textsc{partition}$(S_2,d-1,p)$
+				\State $R_1 \leftarrow $\textsc{merge}$(S_{1,1},S_{2,1},d)$
+				\State $R_2 \leftarrow $\textsc{merge}$(S_{1,2},S_{2,2},d)$
+				\State $R_3 \leftarrow $\textsc{merge}$(S_{1,1},R_2,d-1)$
+				\State \Return $R_1 \cup R_3$
+			\EndIf
+		\EndFunction
+
+		\State $R \leftarrow $\textsc{skyline}$(D,d)$
+	\end{algorithmic}
+\end{algorithm}
+
+\subsection{SSkyline}
+
+SSkyline, also known as Best \cite{torlone2002finding}, is an
+algorithm for skyline computation where the entire input relation
+is assumed to be placed in main memory \cite{park2009parallel}.
+In contrast to BNL and other external algorithms, SSkyline does
+not need to consider temporary files and disk delays. Instead, it
+is optimized to exhibit good memory access patterns, and is
+considered a highly efficient cache conscious in-memory algorithm
+for small to moderate input relations.
+
+\begin{figure}[H]
+	\centering
+	\begin{tikzpicture}[scale=0.5]
+	\def\lastx{0}
+
+	% Arrays and dots
+	\foreach [remember=\x as \lastx] \x in {1,2,...,20} {
+		\draw (\lastx,0) rectangle (\x,1);
+		\draw (\lastx,6) rectangle (\x,7);
+		\draw (\lastx,11) rectangle (\x,12);
+	}
+	\draw (10,9.0) node {\vdots};
+	\draw (10,3.6) node {\vdots};
+
+	% Initial state
+	\draw (0.5,10) node (head) {$head$};
+	\draw[->] (head.north) -- +(0,0.4);
+	\draw (19.5,10) node (tail) {$tail$};
+	\draw[->] (tail.north) -- +(0,0.4);
+	\draw (1.5,13) node (i) {$i$};
+	\draw[->] (i.south) -- +(0,-0.4);
+
+	% State in middle of execution
+	\draw (5.5,5) node (head) {$head$};
+	\draw[->] (head.north) -- +(0,0.4);
+	\draw (11.5,5) node (tail) {$tail$};
+	\draw[->] (tail.north) -- +(0,0.4);
+	\draw (6.5,8) node (i) {$i$};
+	\draw[->] (i.south) -- +(0,-0.4);
+	\foreach \x/\y in {0,1,...,4}
+		\draw[color=gray,fill=black] (\x,6) rectangle +(1,1);
+	\foreach \x/\y in {12,13,...,19}
+		\draw[fill=gray] (\x,6) rectangle +(1,1);
+
+	% Termination state
+	\draw (7.5,2) node (head) {$head$};
+	\draw[->] (head.south) -- +(0,-0.4);
+	\draw (7.5,-1) node (tail) {$tail$};
+	\draw[->] (tail.north) -- +(0,0.4);
+	\foreach \x/\y in {0,1,...,7}
+		\draw[color=gray,fill=black] (\x,0) rectangle +(1,1);
+	\foreach \x/\y in {8,...,19}
+		\draw[fill=gray] (\x,0) rectangle +(1,1);
+
+	\end{tikzpicture}
+	\caption{SSkyline example. Black boxes are part of the
+	skyline, white boxes are undetermined, and gray boxes are
+	dominated (i.e. gray boxes are not part of the skyline)} 
+	\label{fig:sskyline}
+\end{figure}
+
+SSkyline takes an input relation $D$ containing $n$ tuples as
+input, and returns the skyline of $D$. The skyline is computed
+using two nested loops and three indices: $head$, $tail$, and $i$.
+Intuitively the inner loop searches for the next skyline tuple,
+while the outer loop repeats the inner loop until all skyline
+tuples have been found. Figure \ref{fig:sskyline} shows an
+example run of SSkyline. In the first iteration $head$ points
+to the first tuple, $i$ to the second, and $tail$ to the last.
+Confirmed skyline tuples are placed left of $head$ and colored
+black, confirmed non-skyline tuples are placed to the right of
+$tail$ and marked with gray, while tuples in-between are still
+under consideration and will at some point be pointed to by
+$head$ if they are part of the skyline. Each iteration of the
+outer loop confirms one skyline tuple by moving $head$ to the
+right, and the inner loop may discard many non-skyline tuples
+by moving $tail$ to the left. When $head = tail$, the
+algorithm terminates and returns all skyline tuples. At this
+point, $head$ and $tail$ points to the last skyline tuple,
+while $i$ has been discarded. Algorithm \ref{alg:sskyline}
+describes SSkyline in detail. 
+
+\begin{algorithm}[H]
+	\caption{SSkyline}
+	\label{alg:sskyline}
+	\begin{algorithmic}
+		\Require
+			$D$ is the input relation, 
+			$n$ is number of tuples in $D$
+		\Ensure $R$ contains the skyline of $D$
+		\State $head \leftarrow 1$ 
+		\State $tail \leftarrow n$ 
+		\While{$head < tail$}
+			\State $i \leftarrow head + 1$
+			\While{$i \leq tail$}
+				\If{$D_{head} \prec D_i$}
+					\State $D_i \leftarrow D_{tail}$
+					\State $tail \leftarrow tail - 1$
+				\ElsIf{$D_i \prec D_{head}$}
+					\State $D_{head} \leftarrow D_i$
+					\State $D_i \leftarrow D_{tail}$
+					\State $tail \leftarrow tail - 1$
+					\State $i \leftarrow head + 1$
+				\Else
+					\State $i \leftarrow i + 1$
+				\EndIf
+			\EndWhile
+			\State $head \leftarrow head + 1$
+		\EndWhile
+		\State $R \leftarrow D_1, \ldots, D_{head}$
+	\end{algorithmic}
+\end{algorithm}
+
+\subsection{Index based}
+
+There are a number of skyline algorithms that exploit index
+structures in some way
+\cite{tan2001efficient,papadias2003optimal,borzsony2001skyline,papadias2005progressive}.
+For instance, branch-and-bound is the best performing disk-based
+algorithm.  Index based methods are not central to this thesis,
+however, we include a superficial explanation of the
+nearest-neighbor (NN) and branch-and-bound (BBS) algorithms for
+the sake of completeness.
+
+Nearest-neighbor algorithm and branch-and-bound skyline algorithm
+use indexing (R-trees) in order to eliminate dominance tests for a
+block of tuples at once. NN use the results of nearest neighbor
+search to partition the input data recursively
+\cite{borzsony2001skyline}. NN was proven to outperform other
+algorithms in \cite{borzsony2001skyline}, however, it has some
+shortcomings that was addressed in \cite{papadias2005progressive}.
+Specifically, NN lacked a duplicate elimination, introduced
+multiple node visits and had large space requirements. BBS is a
+state-of-the-art skyline algorithm based on NN. BBS is IO-optimal,
+meaning it visits only the nodes that may contain skyline points,
+and it does not access the same node twice, and can be considered
+the successor of NN.
+
+\section{Parallel algorithms}
+
+In this section we present parallel skyline algorithms, including
+traditional algorithms targeted at parallel and distributed
+systems, and recent algorithms developed for multi-core
+architectures.
+
+\subsection{Parallel divide-and-conquer}
+
+The parallel divide-and-conquer algorithm consists of three
+phases: partition, local skyline computation, and merge. The
+partition phase divides tuples into distinct sets and can be
+performed using a number of different techniques. In the local
+skyline phase, each thread independently computes the local
+skyline for its designated partition $D_i$. Finally, local
+skylines are merged to produce the global skyline $R$. Algorithm
+\ref{alg:pdqskyline} shows an overview of parallel D\&Q.
+
+\begin{algorithm}[H]
+	\caption{PDQSkyline}
+	\label{alg:pdqskyline}
+	\begin{algorithmic}
+		\Require 
+			$D$ is the input relation, 
+			$N$ is number of partitions
+		\Ensure $R$ is the skyline of $D$
+		\State $D_1, \ldots, D_N \leftarrow$ Partition($D$,$N$)
+		\State $S_1,\ldots,S_N \leftarrow$ LocalSkyline($D_i,\ldots,D_N$)
+		\State $R \leftarrow$ Merge($S_1,\ldots,S_N$)
+	\end{algorithmic}
+\end{algorithm}
+
+In a shared-nothing architecture, there typically exists one
+central server, called coordinator, which is responsible for a set
+of \textit{N} servers. In a basic parallel D\&Q skyline algorithm,
+a coordinator delegates the local skyline computation to
+\textit{N} servers by sequentially partitioning the data based on
+some criteria. After local skylines have been computed, each
+server sends the result to the coordinator, which performs a
+sequential merge.
+
+Parallel D\&Q is based on the fact that, for any decomposition of
+the set $D$ into subsets $D_1, \ldots D_N$, the global skyline is
+equal to the skyline of the union of all local skylines
+\cite{cosgaya2007parallel}: $Skyline(D) = Skyline(Skyline(D_1)
+\cup \ldots \cup Skyline(D_N))$. This means that we can use any
+sequential skyline algorithm to calculate the local skylines.
+Additionally we can use the same sequential skyline algorithm to
+merge the results.
+
+In \cite{cosgaya2007parallel} they propose a parallel D\&Q
+algorithm use random partitioning to ensure that each server get a
+similar workload. For local skyline computation they use BBS. In
+the merge phase, they use all-to-all communication to provide a
+more efficient elimination of non-skyline tuples. We refer to the
+original article for a detailed explanation.
+
+There are a wide range of partitioning techniques available for
+skyline computation. For instance, one can use grid or angular
+partitioning to exploit geometric properties of the dataset,
+random partitioning can be used to achieve fairness in uniform
+data distributions, or one can simply divide data based on its
+location in memory without any consideration for skyline-specific
+traits or heuristics. In subsequent sections we describe selected
+partitioning techniques that are related to work done in this
+thesis.
+
+\subsubsection{Linear partitioning}
+\label{sec:linear-partitioning}
+
+In a linear partitioning strategy, data is distributed without no geometric
+considerations. The input set is simply divided into the \textit{n} equal
+sized parts $D_1 = [ d_1, \ldots, d_{Card(D)/n} ], \ldots, D_n = [
+d_{Card(D)/n(n-1)}, \ldots, d_{Card(D)} ]$. This strategy is illustrated in
+Figure \ref{fig:linear-partitioning}.
+
+\begin{figure}[H]
+	\centering
+	\usetikzlibrary{decorations.pathreplacing}
+	\begin{tikzpicture}[
+		scale=0.5,
+		brace/.style={decorate,decoration={brace,mirror,amplitude=4pt}},
+	]
+	\draw[xstep=2cm,ystep=0.5cm] (0,0) grid (6,8);
+
+	\def\lastx{0}
+	\foreach \x/\xtext [remember=\x as \lastx] in {2/4,4/3,6/2,8/1} {
+		\draw[brace] (6.25,\lastx) -- (6.25,\x) node [midway,xshift=0.5cm] {$D_\xtext$};
+	}
+
+	\end{tikzpicture}
+	\caption{Linear partitioning strategy into 4 partitions for a
+	3-dimensional dataset} 
+	\label{fig:linear-partitioning}
+\end{figure}
+
+Linear partitioning is easy to implement, distributes tuples
+fairly, and can be performed very efficiently. In some cases, data
+can be processed without explicitly creating separate partitions,
+thus saving memory volume and bandwidth. However, it does not
+exploit operator-specific features such as geometric properties.
+
+\subsubsection{Angle-based space partitioning}
+
+Angle-based partitioning  is an efficient geometric partitioning
+technique. It is a big step from linear to angle-based partitioning,
+and one may expect random- or grid partitioning to be intermediate
+steps. However, all space partitioning techniques incur similar memory
+bandwidth and locality costs. Specifically, each point needs to
+be mapped to its designated partition by inspecting its value, which
+translates into consecutive read operations and random write
+operations. We therefore choose to go directly for the most efficient
+(and complex) partitioning technique for skyline computation.
+
+\begin{figure}[H]
+	% Helpers
+	\newcommand\drawpoints{
+		\path	node (a) at (1.5,2.5) [skylinepoint] {}
+				node (b) at (8,0.25) [skylinepoint] {}
+				node (c) at (1.25, 8) [skylinepoint] {}
+				node (d) at (2,7) [point] {}
+				node (e) at (6,4) [point] {}
+				node (f) at (4,6) [point] {}
+				node (g) at (5.5,9) [point] {}
+				node (h) at (4,1) [skylinepoint] {}
+				node (i) at (7,6) [point] {}
+				node (j) at (6,7) [point] {}
+				node (k) at (2.5,2) [skylinepoint] {};
+		\path	(a) +(0.5,0.5) node {a}
+				(b) +(0.5,0.5) node {b}
+				(c) +(0.5,0.5) node {c}
+				(d) +(0.5,0.5) node {d}
+				(e) +(0.5,0.5) node {e}
+				(f) +(0.5,0.5) node {f}
+				(g) +(0.5,0.5) node {g}
+				(h) +(0.5,0.5) node {h}
+				(i) +(0.5,0.5) node {i}
+				(j) +(0.5,0.5) node {j}
+				(k) +(0.5,0.5) node {k};
+	}
+	\newcommand\drawticks{
+		\path	node at (-0.5,-0.5) {0} 
+				node at (10,-0.5) {10} 
+				node at (-0.5, 10) {10};
+	}
+	\newcommand\drawaxes{
+			\draw[->] (0,0) -- (11,0) node[sloped,below,midway] {Price};
+			\draw[->] (0,0) -- (0,11) node[sloped,above,midway] {Distance};
+	}
+	\tikzset{
+		point/.style={inner sep=1,fill,circle,color=gray}, 
+		skylinepoint/.style={inner sep=1,fill,circle,color=black},
+		skyline/.style={dashed,color=gray}
+	}
+
+	% Graphs
+	\subfloat[Grid partitioning]{
+		\begin{minipage}[b]{0.5\linewidth}
+		\centering
+			\begin{tikzpicture}[scale=0.5]
+				\drawaxes
+				\drawticks
+				\drawpoints
+				\draw[step=5] (0,0) grid (10,10);
+				\draw[skyline] (c |- 0,10) -- (c) -| (d) -| (f) -- (5,0 |- f);
+				\draw[skyline] (g |- 0,10) -- (g) -| (j) -| (i) -- (i -| 10,0);
+				\draw[skyline] (a |- 0,5) -- (a) -| (k) -| (h) -- (h -| 5,0);
+				\draw[skyline] (e |- 0,5) -- (e) -| (b) -- (b -| 10,0);
+			\end{tikzpicture}
+		\end{minipage}
+	}
+	\quad
+	\subfloat[Angle partitioning]{
+		\begin{minipage}[b]{0.5\linewidth}
+		\centering
+			\begin{tikzpicture}[scale=0.5]
+				\drawaxes
+				\drawticks
+				\drawpoints
+				\draw (10,0) -- (10,10);
+				\draw (0,10) -- (10,10);
+				\draw (0,0) -- (5,10);
+				\draw (0,0) -- (10,10);
+				\draw (0,0) -- (10,5);
+				\draw[skyline] (0,10 -| c) -- (c) -| (d) -- +(1.5,0);
+				\draw[skyline] (a) +(0,0.5) -- (a) -- +(0.9,0);
+				\draw[skyline] (k) +(0,0.5) -- (k) -- +(1.45,0);
+				\draw[skyline] (h) +(0,1) -- (h) -| (b) -- (b -| 10,0);
+			\end{tikzpicture}
+		\end{minipage}
+	}
+	\caption{Partitioning example using 4 partitions} 
+	\label{fig:partitioning-example}
+\end{figure}
+
+The motivation behind angle-based partitioning is best explained
+by an example from \cite{vlachou2008angle}. We use the classical
+hotel distance-price scenario where one would like to find hotels
+that have the lowest possible price and distance. Figure
+\ref{fig:partitioning-example} shows all possible hotels as
+points, where black points are included in the global skyline, and
+local skylines are dashed. The global skyline consists of 5
+points: c, a, k, h, and b. Using a grid-based partitioning, the
+local skyline computation phase will return 11 points as potential
+candidates, all which need to be processed in the merging phase.
+In contrast, the angle-based method return only 6 points to the
+merge phase reducing workload by 45\% compared to the grid-based
+technique. Indeed, the angle-based technique generate a set of
+local skylines that closely resemble the end result, differing
+only by a single point.
+
+Another feature that is worth mentioning is the pruning power of
+the average local data point. Looking at
+\ref{fig:partitioning-example}b), one can see that points a and k
+dominate all other points in their partition, significantly
+reducing the work required for local skyline computation. We refer
+to \cite{vlachou2008angle} for a detailed analysis on pruning
+power.
+
+In order to compute partitioning bounds and distribute points, an
+angle-based partitioning technique maps the cartesian coordinate
+space into a hyperspherical space, and partitions the data space
+based on angular coordinates into \textit{N} partitions.
+
+\begin{minipage}{\linewidth}
+\begin{equation}
+\begin{aligned}
+	 r &= \sqrt{x_n^2 + x_{n-1}^2+\ldots+x_1^2} \\
+	 tan(\phi_1) &= \frac{\sqrt{x_n^2+x_{n-1}^2+\ldots+x_2^2}}{x_1} \\ 
+	 &\vdots \label{eq:coords}\\
+	 tan(\phi_{d-2}) &= \frac{\sqrt{x_n^2+x_{n-1}^2}}{x_{n-2}} \\
+	 tan(\phi_{d-1}) &= \frac{x_n}{x_n-1}
+\end{aligned}
+\end{equation}
+\end{minipage}
+
+Coordinates are mapped to the hyperspherical space using Equation
+\ref{eq:coords}, resulting in $d-1$ angular dimensions for a
+\textit{d}-dimensional dataset. Subsequently, the angular
+coordinates are used to divide the space into \textit{N}
+partitions using a grid partitioning technique. This leads to a
+partitioning where all points that have similar angular
+coordinates fall into the same partition. In effect, each local
+skyline computation will get an increasingly correlated dataset
+as the number of partitions increase. The end-result is that local
+skylines are of a small cardinality and that most skyline
+algorithms perform well on them.
+
+Given the number of partitions \textit{N} and a
+\textit{d}-dimensional data space \textit{D}, angle-based
+partitioning assigns to each partition a part of the data space
+$D_i$, defined by Equation \ref{eq:angleparts}. Note that we
+assume that points are non-negative in all dimensions.
+
+\begin{minipage}{\linewidth}
+	\begin{equation}
+		\label{eq:angleparts}
+		\begin{aligned}
+		D_i &= [\phi_1^{i-1},\phi_1^i] \times \ldots \times 
+		[\phi_{d-1}^{i-1},\phi_{d-1}^i] \\
+		\phi_j^0 &= 0 \\
+		\phi_j^N &= \frac{\pi}{2} \\
+		\end{aligned}
+		\qquad 1 \leq j \leq d,\quad 1 \leq i \leq N
+	\end{equation}
+\end{minipage}
+
+Vlachou et al. suggests two methods of defining partitioning bounds:
+equi-volume and dynamic. In the original article, this technique is
+used in a disk-based shared-nothing parallel DBMS context. However, we
+focus on multi-core shared-memory systems, and will use angle
+partitioning as an integral part of our experiments. Consequently, we
+explain each method as if the entire relation, and all partitions can
+be stored in main memory. Angle-based partitioning algorithms
+presented in following sections are based on textual explanations in
+\cite{vlachou2008angle}, and source code received from the authors.
+
+\subsubsection{Equi-volume partitioning}
+\label{sec:equi-volume-partitioning}
+
+Equi-volume partitioning aims to derive the grid boundaries in
+such a way that the points are equally distributed to partitions,
+assuming an independent data distribution.  With an independent
+data distribution, a partitioning scheme that generates partitions
+of equal volume will ensure an approximately equal number of
+points in each partition. If \textit{V} is the volume of the
+\textit{d}-dimensional space and \textit{N} the available number
+of cores, the volume of each partition should be $\frac{V}{N}$.
+
+The equi-volume strategy is described by Algorithm
+\ref{alg:anglepartition-bounds}. Partitioning bounds are
+represented by a collection of \textit{N} $(d - 1)$-dimensional
+structures that includes the lower and higher bounds for each
+angle. Similar to \cite{vlachou2008angle}, bounds are calculated
+by dividing the data space independently by each angle creating
+approximately equal volume for each partition. In order to divide
+the data space into \textit{N} equi-volume parts based on one
+angular dimension $\phi$, a binary search on the interval $[0,
+\ldots, \frac{\pi}{2}]$ is performed. In each step the volume of
+the current partition is evaluated and compared to the target
+volume of $\frac{V}{d-1}$ When the volume is sufficiently close,
+bounds are accepted, and bounds for the next angle are calculated. 
+
+\begin{algorithm}[H]
+	\caption{ComputeBounds}
+	\label{alg:anglepartition-bounds}
+	\begin{algorithmic}
+		\Require 
+			$d$ is the number of dimensions in the input relation,
+			$N$ is the total number of partitions,
+			$N_0 \ldots N_{d-1}$ is the number of partitions per dimension,
+		\Ensure $R$ is the bounds for each angle
+		\ForAll{$j \leftarrow 1$ to $d-1$}
+			\Comment{each angular dimension}
+			\State $\phi_j^0 = 0$
+			\State $\phi_j^N = \frac{\pi}{2}$
+			\ForAll{$i \leftarrow 1$ to $N_j$}
+				\Comment{each partition}
+				\State $V_i \leftarrow calcVolume(\phi_j^{i-1},\phi_j^i,d)$
+				\While{$|V_i - \frac{V}{N}| > threshold(V)$}
+					\Comment{binary search}
+					\If{$V_i < \frac{V}{p}$}
+						\State $\phi_j^i \leftarrow \phi_j^i + \frac{\phi_j^i-\phi_j^{i-1}}{2}$
+					\Else
+						\State $\phi_j^i \leftarrow \phi_j^i - \frac{\phi_j^i-\phi_j^{i-1}}{2}$
+					\EndIf
+					\State $V_i \leftarrow calcVolume(\phi_j^{i-1},\phi_j^i,d)$
+				\EndWhile
+			\EndFor
+		\EndFor
+		\State $R \leftarrow \forall_{i,j}(\phi_j^i \big | 0 \leq i \leq N, 0 \leq j < d )$
+		\Comment{all calculated boundaries}
+	\end{algorithmic}
+\end{algorithm}
+
+We use Algorithm \ref{alg:anglepartition-count} in order to
+determine the number of partitions possible per dimension. For the
+simplest case, each dimension incur an equal number of splits,
+resulting in a symmetric partitioning where each dimension is
+split into $\leftarrow \lfloor \sqrt[d-1]{N} \rfloor$ parts. If this
+is impossible, due to non-cubic partition count we resort to an
+asymmetric strategy as described in the while loop of
+\ref{alg:anglepartition-count}. Number of partitions in each
+dimension is increased progressively until the total partition is
+equal to $N$.
+
+\begin{algorithm}[H]
+	\caption{CountPartitions}
+	\label{alg:anglepartition-count}
+	\begin{algorithmic}
+		\Require 
+			$N$ is the total number of partitions,
+			$d$ is the number of dimensions
+		\Ensure $R$ contains the number of partitions for each angle
+		\State $N_1, \ldots, N_{d-1} \leftarrow \lfloor \sqrt[d-1]{p} \rfloor$
+		\State $achieved \leftarrow (N_1)^{d-1}$
+		\State $change \leftarrow$ \texttt{True}
+		\While{$achieved < N \land change$}
+			\Comment{asymmetric partitioning}
+			\State $change \leftarrow$ \texttt{False}
+			\ForAll{$i \leftarrow 1$ to $d-1$}
+				\If{$\frac{achieved}{N_i} * (N_i + 1) \leq N$}
+					\State $N_i \leftarrow N_i + 1$
+					\Comment{increase partition count for angular dimension $i$}
+					\State $achieved \leftarrow achieved + 1$
+					\State $change \leftarrow$ \texttt{True}
+				\EndIf
+			\EndFor
+		\EndWhile
+		\State $R \leftarrow N_i, \ldots, N_{d-1}$
+	\end{algorithmic}
+\end{algorithm}
+
+When the boundary values have been computed, all points are
+distributed by Algorithm \ref{alg:anglepartition-map}. This
+algorithm give each partition a unique identifier. A point is
+allocated to its designated partition by looping through all
+partitions and checking if the point is confined in the
+pre-computed bounds for all angular dimensions.
+
+\begin{algorithm}[H]
+	\caption{MapPointToPartition}
+	\label{alg:anglepartition-map}
+	\begin{algorithmic}
+		\Require 
+			$p$ is a point of $d$ dimensions, 
+			$N$ is number of partitions,
+			$\ldots, \phi_j^i, \ldots$ is the partitioning bounds 
+		\Ensure $R$ is the partition id for $p$
+		\State $p_1, \ldots, p_{d-1} \leftarrow$ angular coordinates for p
+		\ForAll{$i \leftarrow 1 \ldots N$}
+			\Comment{each partition}
+			\State \textsc{NextPartition:}
+			\ForAll{$j \leftarrow 1$ to $d-1$}
+				\Comment{each angular dimension}
+				\If{$\lnot(\phi_j^{i-1} < p_j \leq \phi_j^i)$}
+					\State \textbf{goto} \textsc{NextPartition}
+				\EndIf
+			\EndFor
+			\State $R = j$
+		\EndFor
+	\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{Dynamic partitioning}
+
+A weakness of static schemes like equi-volume partitioning is that
+non-uniform data distributions may be unevenly distributed. In the
+worst-case, all work may be distributed to one single thread,
+prohibiting the algorithm for utilizing any parallel resources.
+Dynamic partitioning alleviate this problem by splitting the space
+according to the data distribution. 
+
+Figure \ref{fig:equi-vs-dyn} shows an example of a non-uniform
+distribution where equi-volume partitioning is particularly
+inefficient. In this case one partition holds 92\% of the input
+data, while the other three are more or less empty, clearly not a
+fair distribution. In contrast, the dynamic technique are able to
+distribute the same dataset quite well, resulting in the
+following distribution: 29\%, 21\%, 29\%, 21\% (clockwise).
+
+\begin{figure}[H]
+	% Helpers
+	\newcommand\drawpoints{
+		\path	node (a) at (1.5,2.5) [point] {}
+				node (b) at (2.5,4) [point] {}
+				(b) +(1,2)node (c) [point] {}
+				(c) +(2,1) node (d) [point] {}
+				(d) +(2,-1) node [point] {}
+				(d) +(2,1) node [point] {}
+				(d) +(1,-0.3) node [point] {}
+				(d) +(-1.5,0.5) node [point] {}
+				(d) +(-0.5,2) node [point] {}
+				(d) +(1,2) node [point] {}
+				(d) +(-0.5,1.5) node [point] {}
+				(d) +(1.25,1) node [point] {}
+				(a) +(1.5,1) node [point] {}
+				(a) +(1,0.5) node [point] {};
+	}
+	\newcommand\drawaxes{
+			\draw[->] (0,0) -- (11,0) node[sloped,below,midway] {x-axis};
+			\draw[->] (0,0) -- (0,11) node[sloped,above,midway] {y-axis};
+	}
+	\tikzset{
+		point/.style={inner sep=1,fill,circle,color=black}
+	}
+
+	% Graphs
+	\subfloat[Equi-volume]{
+		\begin{minipage}[b]{0.5\linewidth}
+		\centering
+			\begin{tikzpicture}[scale=0.5]
+				\drawaxes
+				\drawpoints
+				\draw (10,0) -- (10,10);
+				\draw (0,10) -- (10,10);
+				\draw (0,0) -- (5,10);
+				\draw (0,0) -- (10,10);
+				\draw (0,0) -- (10,5);
+			\end{tikzpicture}
+		\end{minipage}
+	}
+	\quad
+	\subfloat[Dynamic]{
+		\begin{minipage}[b]{0.5\linewidth}
+		\centering
+			\begin{tikzpicture}[scale=0.5]
+				\drawaxes
+				\drawpoints
+				\draw (10,0) -- (10,10);
+				\draw (0,10) -- (10,10);
+				\draw (0,0) -- (59:11.666);
+				\draw (0,0) -- (52:12.690);
+				\draw (0,0) -- (48:13.465);
+			\end{tikzpicture}
+		\end{minipage}
+	}
+	\caption{Equi-volume versus dynamic partitioning in a non-uniform dataset} 
+	\label{fig:equi-vs-dyn}
+\end{figure}
+
+Dynamic partitioning works by progressively splitting the data
+space into smaller partitions as shown in Algorithm
+\ref{alg:dynamic-partitioning}. Starting with one partition,
+Algorithm \ref{alg:dynamic-partitioning} distributes points until
+the maximum number of tuples per partition is reached for the
+current partition. At this point, the partition is split in
+angular dimension 1, and points are redistributed into two
+partitions based on the new boundaries. To ensure an even
+distribution among the new partitions, the split is made at the
+mean (or median) value in angular dimension 1 of all points in the
+partition being split. Subsequent splitting is done similarly. The
+angular split dimension is chosen in a round robin fashion.
+
+Note that we use Algorithm \ref{alg:anglepartition-map} when
+mapping coordinates. However, partitioning boundaries has to be
+specified in tuples $[low, high]$ as they are no longer ordered in
+such a way that we can use a simple list. To make this clear, we
+use a slightly different boundary specification where $\theta$
+indicates bound low, and $\phi$ indicates boundary high.
+Additionally, we use $\Phi$ and $\Theta$ to indicate all low-, and
+high boundary values respectively.
+
+\begin{algorithm}[H]
+	\caption{DynamicPart}
+	\label{alg:dynamic-partitioning}
+	\begin{algorithmic}
+		\Require 
+			$D$ is the input relation of $d$ dimensions, 
+			$N$ is the number of partitions,
+			$n_{max}$ is maximum partition size
+		\Ensure $D_1, \ldots D_p$ is $N$ disjoint partitions of $D$
+		\State $N_{achieved} \leftarrow 1$
+		\State $\theta_{1,\ldots,d}^1 \leftarrow 0$
+		\State $\phi_{1,\ldots,d}^1 \leftarrow \frac{\pi}{2}$
+		\State $j \leftarrow 1$
+		\ForAll{$p \in D$}
+			\Comment{distribute points}
+			\State $i \leftarrow MapPointToPartition(p,N_{achieved},\Theta,\Phi)$
+			\State $D_i \leftarrow D_i \cup \{p\}$
+			\If{$Card(D_i) > n_{max}$}
+			\Comment{split partition}
+				\State $N_{achieved} \leftarrow N_{achieved} + 1$
+				\State $\theta_{1,\ldots,d}^{N_{achieved}} \leftarrow \theta_{1,\ldots,d}^{i}$
+				\State $\phi_{1,\ldots,d}^{N_{achieved}} \leftarrow \phi_{1,\ldots,d}^i$
+				\State $\theta_{j}^{N_{achieved}} \leftarrow \overline{p_j^1,\ldots,p_j^{Card(D_i)}}$
+				\Comment{mean value in angular dimension $d$}
+				\State $\phi_j^i \leftarrow \theta_{j}^{N_{achieved}}$
+				\State $j \leftarrow j + 1$
+				\ForAll{$q \in D_i$}
+					\Comment{redistribute points}
+					\State $D_i \leftarrow D_i - \{q\}$
+					\State $k \leftarrow MapPointToPartition(p,N_{achieved},\Theta,\Phi)$
+					\State $D_k \leftarrow D_k \cup \{p\}$
+				\EndFor
+			\EndIf
+		\EndFor
+	\end{algorithmic}
+\end{algorithm}
+
+\subsection{PSkyline}
+\label{sec:pskyline}
+
+The PSkyline algorithm, is a D\&Q based algorithm optimized for
+multi-core processors. In contrast to most existing divide-and-conquer
+algorithms for skyline computation that divide into partitions based
+on geometric properties, PSkyline simply divides D linearly into
+smaller blocks using the partitioning scheme described in Section
+\ref{sec:linear-partitioning}. Im et al. evaluate PSkyline and
+parallel versions of BBS, SFS, and SSkyline on a sixteen core machine
+in \cite{park2009parallel}. In their experiments, PSkyline
+consistently had the best utilization of multiple cores, however,
+algorithms were evaluated based on parallel speedup only, and were not
+compared in terms of performance.
+
+Algorithm \ref{alg:pdqskyline} describes the general structure of
+PSkyline. First, the input relation is \textit{D} is split into
+$N$ partitions sequentially. Second, the local skyline is computed
+for each partition in parallel using Algorithm \ref{alg:sskyline}.
+Finally, local skylines are merged in parallel using Algorithm
+\ref{alg:pmerge} repeatedly until all local skylines have been
+merged.
+
+\begin{algorithm}[H]
+	\caption{PMerge}
+	\label{alg:pmerge}
+	\begin{algorithmic}[1]
+		\Require
+			$S_1$ is a local skyline,
+			$S_2$ is another local skyline
+		\Ensure $R$ is skyline of $S_1 \cup S_2$
+		\State $T_1 \leftarrow S_1$
+		\State $T_2 \leftarrow \{\}$
+		\Function{f}{y}
+			\ForAll{$x \in T_1$}
+				\If{$y \prec x$}
+					\State $T_1 \leftarrow T_1 - \{x\}$
+				\ElsIf{$x \prec y$}
+					\State \Return
+				\EndIf
+			\EndFor
+			\State $T_2 \leftarrow T_2 \cup \{y\}$
+		\EndFunction
+		\ForAllP{$y \in S_2$}
+			\State \textsc{f}($y$)
+		\EndForAllP
+		\State $R \leftarrow T_1 \cup T_2$
+	\end{algorithmic}
+\end{algorithm}
+
+Figure \ref{fig:pmerge} shows two possible merging strategies:
+balanced and unbalanced. The balanced strategy are able to utilize
+more coarse-grained parallelism than the unbalanced strategy
+\cite{leiserson1998minicourse}. However, as pointed out in
+\cite{park2009parallel}, this strategy will be increasingly sequential
+as number of local skylines decrease (and the size of each local
+skyline increase). In other words, relying solely on a balanced merge
+strategy is not sufficient to efficiently utilize parallel compute
+power when its needed the most.
+
+\begin{figure}[H]
+
+	\tikzset{
+		partition/.style=draw,rectangle,minimum height=5mm,minimum width=5mm
+	}
+	\subfloat[Balanced]{
+		\begin{minipage}[b]{0.5\linewidth}
+		\centering
+			\begin{tikzpicture}[scale=0.5]
+				\node[partition,minimum height=17.5mm] (r) at (6,3) {};
+				\foreach \x/\y in {1/1,5/2} {
+					\node[partition,minimum height=12.5mm] (m\y) at (3,\x) {};
+					\draw[->] (m\y) -- (r);
+				}
+				\foreach \x/\y in {0/1,2/1,4/2,6/2} {
+					\node[partition] (s) at (0,\x) {};
+					\draw[->] (s) -- (m\y);
+				}
+			\end{tikzpicture}
+		\end{minipage}
+	}
+	\quad
+	\subfloat[Unbalanced]{
+		\begin{minipage}[b]{0.5\linewidth}
+		\begin{tikzpicture}[scale=0.5]
+				\node[partition,minimum height=10mm,below] (m1) at (3,6.5) {};
+				\node[partition,minimum height=14mm,below] (m2) at (6,6.5) {};
+				\node[partition,minimum height=17.5mm,below] (m3) at (9,6.5) {};
+				\node[partition] (s4) at (0,0) {};
+				\node[partition] (s3) at (0,2) {};
+				\node[partition] (s2) at (0,4) {};
+				\node[partition] (s1) at (0,6) {};
+				\draw[->] (s1) -- (m1);
+				\draw[->] (s2) -- (m1);
+				\draw[->] (s3) -- (m2);
+				\draw[->] (s4) -- (m3);
+				\draw[->] (m1) -- (m2);
+				\draw[->] (m2) -- (m3);
+		\end{tikzpicture}
+		\end{minipage}
+	}
+	\caption{Parallel merge strategies}
+	\label{fig:pmerge}
+\end{figure}
+
+To avoid the problems associated with coarse-grained parallelism,
+Algorithm \ref{alg:pmerge} use a more fine-grained parallelism by
+allowing threads to fetch tuples from $S_2$ in a round robin fashion
+until skylines $S_1$ and $S_2$ have been merged. In a distributed or
+parallel system this would have been very inefficient due to expensive
+communication through a slow interconnect. However, in a shared-memory
+system, where communication costs are relatively small
+\cite{meneghin2012performance}, the algorithm is able to utilize a
+great degree of parallelism with minimal overhead by working on the
+same data structure. PSkyline use the unbalanced merge strategy
+illustrated in Figure \ref{fig:pmerge}b), which is easier to implement
+in most shared-memory frameworks
+\cite{dagum1998openmp,randall1998cilk,cantonnet2004productivity,willhalm2008putting} than
+the balanced strategy .
+
+\subsection{ParallelBNL}
+\label{sec:parallel-bnl}
+
+In \cite{selke2010highly}, Selke et al. suggests a parallel
+version of BNL using a shared linked list for the skyline window.
+This is a straightforward approach, where a sequential algorithm
+is parallelized without big modifications. However, there are some
+issues related to concurrent modification of the shared list.
+
+Three variants of list synchronization are suggested in the
+article: continuous, lazy, and lock-free. With continuous locking,
+each thread will acquire a lock on the next node before
+processing, lazy locking \cite{heller2006lazy} only locks nodes
+that should be modified (or deleted), while lock-free are an
+optimistic approach that does not use any locking. Lazy and
+lock-free variants need to verify that iterations have been
+correctly performed and restart iterations that fail. ParallelBNL
+algorithms with each of the mentioned synchronization techniques
+are tested and the lazy locking scheme is shown to be most
+efficient. When we write ParallelBNL later in this thesis, we
+refer to parallel BNL using the lazy locking scheme, defined in
+Algorithm \ref{alg:parallel-bnl}.
+
+Each thread in ParallelBNL continuously process points fetched
+from the input relation. Fetching is done in a round robin fashion
+so that each thread receives similar work loads. Synchronization
+is only needed when the shared list needs to be modified.
+ParalellBNL uses a binary flag $deleted$ to guarantee that no
+adjacent nodes are modified concurrently, which might otherwise
+result in violating pointer integrity.
+
+\begin{algorithm}[H]
+	\begin{algorithmic}
+		\Require
+			$D$ is an input relation of $d$ dimensions
+			$N$ is available number of cores
+		\Ensure $R$ is skyline of $D$
+		\Function{bnlthread}{head,tail}
+			\State \textsc{NextRecord:}
+			\While{$a \leftarrow D.next()$}
+				\State \textsc{TraverseList:}
+				\State $pred \leftarrow head$
+				\State $curr \leftarrow pred.next$
+				\While{$curr \neq tail$}
+					\If{$curr.item \prec a$}
+						\Comment{discard a}
+						\State \textbf{goto} \textsc{NextRecord}
+					\ElsIf{$a \prec curr.item$}
+						\Comment{try to discard curr}
+						\State \Lock $pred$
+						\State \Lock $curr$
+						\If{\textsc{validate}$(pred,curr)$}
+							\State $curr.deleted \leftarrow$ \texttt{True}
+							\State $pred.next \leftarrow curr.next$
+							\State \Unlock $curr$
+							\State \Unlock $pred$
+						\Else
+							\Comment{list has been modified, restart}
+							\State \Unlock $curr$
+							\State \Unlock $pred$
+							\State \textbf{goto} \textsc{TraverseList}
+						\EndIf
+						\State $curr \leftarrow curr.next$
+					\Else
+						\State $pred \leftarrow curr$
+						\State $curr \leftarrow curr.next$
+					\EndIf
+				\EndWhile
+				\State \Lock $pred$
+				\Comment{try to append a}
+				\If{\textsc{validate}$(pred,curr)$}
+					\State $new \leftarrow Node(a)$
+					\State $pred.next \leftarrow new$
+					\State $new.next \leftarrow tail$
+					\State \Unlock $pred$
+				\Else
+					\Comment{list has been modified, restart}
+					\State \Unlock $pred$
+					\State \textbf{goto} \textsc{TraverseList}
+				\EndIf
+			\EndWhile
+		\EndFunction
+
+		\Function{validate}{pred, curr}
+			\State \Return $\lnot pred.deleted \land \lnot curr.deleted \land pred.next = curr$
+		\EndFunction
+
+		\State $head \leftarrow Node()$
+		\State $tail \leftarrow Node()$
+		\ForAllP{$i \in 1, \ldots, N$}
+			\State \textsc{bnlthread}$(head,tail)$
+		\EndForAllP
+		\State $R \leftarrow head$
+	\end{algorithmic}
+	\caption{ParallelBNL}
+	\label{alg:parallel-bnl}
+\end{algorithm}
+
+\cleardoublepage
+\chapter{APSkyline}
+\label{chap:apskyline}
+
+In this chapter we develop an efficient skyline algorithm
+optimized for multi-core architectures. The algorithm is
+specifically designed in order to answer RQ3, whether an
+elaborate pre-processing phase can be efficient also in a
+multi-core context.
+
+\section{Algorithm overview}
+
+APSkyline is a D\&Q based algorithm that use the structure defined in
+Algorithm \ref{alg:pdqskyline}. It consists of three phases:
+partition, local skyline computation, and merge. The partition phase
+divides tuples into distinct sets using an angle based partitioning
+scheme \cite{vlachou2008angle,kohler2011efficient}. The local skyline
+computation phase computes the local skyline for each partition using
+Algorithm \ref{alg:sskyline}. And, the merge phase combines local
+skylines to produce final result using the parallel merging strategy
+defined in Algorithm \ref{alg:pmerge}.
+
+The basic idea is to add a state-of-the art partitioning scheme to
+the currently best performing multi-core skyline algorithm,
+PSkyline, in order to improve its capability to efficiently handle
+anti-correlated datasets.
+
+\section{Partition phase}
+
+The partition phase is responsible for dividing data evenly among
+threads and is an essential contributor overall performance. In
+general, partitioning should ensure that we achieve a decent
+degree of parallelism, good scalability, and fair work scheduling
+in subsequent phases. Additionally, we consider skyline-specific
+criteria like size of intermediate and equi-sized local skylines
+\cite{vlachou2008angle}.
+
+In contrast to PSkyline, we would like to exploit geometric
+properties in the dataset even though it may require additional
+pre-processing costs. We therefore choose the angle-based
+partitioning scheme published in \cite{vlachou2008angle}, which
+has been shown to be the most efficient partitioning scheme
+currently known for skyline computation.
+
+Vlachou et al. propose two schemes: equi-volume and dynamic in
+\cite{vlachou2008angle}. We will use equi-volume as defined in
+\ref{sec:equi-volume-partitioning} with minor modifications to
+allow for parallelism in the partitioning phase. Because the
+dynamic scheme requires a substantial amount of memory move
+operations, it will be quite expensive in a multi-core context. We
+therefore suggest to use a sample-dynamic partitioning technique
+that will significantly reduce the costs associated with a dynamic
+scheme.
+
+Because of the high computational costs associated with angle
+partitioning, it is essential that we utilize parallel compute
+power not only in phases that compute the actual skyline, but also
+in the partitioning phase. We propose straight-forward techniques
+for parallelizing equi-volume and sample-dynamic partitioning
+schemes in Section \ref{sec:parallelism-in-the-partition-phase}.
+Additionally, we propose a hybrid partitioning technique that
+utilize geometric properties in combination with random
+partitioning in order to prioritize a fair workload. 
+
+\subsection{Sample-dynamic partitioning}
+\label{sec:sample-dynamic-partitioning}
+
+In a dynamic partitioning scheme, each partition split induce an
+expensive redistribution cost. Specifically, each time a
+partition is split $\frac{n_{max}}{2}$ or more tuples needs to be
+moved from one memory location to another. This is reasonable in a
+parallel or distributed environment where IO-operations (including
+communication between nodes) are the dominating factor. However,
+in a shared-memory system such a method consumes a significant
+amount of the overall runtime. For instance, if we were to split
+the dataset into four partitions each containing at most $n_{max}
+= V/N$ tuples, a dynamic partitioning scheme need to move
+$\frac{3}{2} * n_{max} = \frac{3}{2} * \frac{V}{4} = 0.375V =
+37.5\%$ of the dataset to achieve a perfectly fair data
+distribution. In the linear and equi-volume schemes this cost will
+not occur. Therefore, we propose a sample-based scheme where we
+use a smaller portion of the data in order to determine the
+partitioning boundaries before actual partitioning is performed.
+
+We use Equation \ref{eq:splitcost} to calculate the cost of
+splitting. Obviously this is a simplification and will not be
+completely accurate in all cases. Nevertheless, it provides some
+value when comparing the efficiency of dynamic and sample-dynamic
+partitioning.
+
+\begin{equation}
+	C_{split} = \frac{N-1}{2} * n_{max}
+	\label{eq:splitcost}
+\end{equation} 
+
+In the sample-dynamic partitioning scheme, a configurable
+percentage $s$ of the dataset is used to pre-compute the
+partitioning boundaries. In the simplest case, one can simply use
+a small $n_{max}$ so that partitioning boundaries are defined at
+an early point. To increase the likelihood of picking significant
+sample points, we propose to choose samples in a uniform matter,
+as illustrated by Figure \ref{fig:sample-dynamic}. In general, one
+can choose a number of different strategies, like random picking
+or choosing points based on domain-specific knowledge.
+
+\begin{figure}[H]
+	\centering
+	\begin{tikzpicture}[scale=0.5]
+	\def\lastx{0}
+	\foreach [remember=\x as \lastx] \x in {1,2,...,20}
+		\draw (\lastx,0) rectangle (\x,1);
+	\foreach \x/\y in {1/2, 6/7, 11/12, 17/18}
+		\fill (\x,0) rectangle (\y,1);
+	\end{tikzpicture}
+	\caption{Sample points} 
+	\label{fig:sample-dynamic}
+\end{figure}
+
+To compare dynamic and sample-dynamic partitioning, we assume that
+dynamic partitioning use $n_{max} = \frac{V}{2}$ and sample-dynamic
+use $n_{max} = \frac{V_s}{2}$, where $V_s$ is the sample size. By
+replacing $n_{max}$ Equation \ref{eq:splitcost} with respective
+values, we get the following costs estimations as number of threads
+increase to infinity:
+
+\begin{align*}
+	C_{dynamic} = \lim_{N \to \infty} \frac{N-1}{2}*\frac{V}{N} &= 0.5V \\
+	C_{sample} = \lim_{N \to \infty} \frac{N-1}{2}*\frac{V_s}{N} &= 0.5V_s
+\end{align*}
+
+We observe that the additional cost of dynamic partitioning will never
+be more than 50\% of the dataset, while the additional cost of
+sample-dynamic partitioning will never be more than 50\% of the sample
+size. This indicates that a sample-dynamic scheme can reduce
+partitioning costs significantly if configured correctly. In order to
+achieve a fair distribution, one must find a compromise between
+accuracy and speed. We propose a sample size of 1-10\%, which requires
+a modest splitting cost of $0.5\% - 5\%$, greatly reducing the cost of
+dynamic partitioning.
+
+\subsection{Geometric-random partitioning}
+\label{sec:geometric-random-partitioning}
+
+For distributions where neither equi-volume nor sample-dynamic
+partitioning are able to achieve a fair workload APSkyline will not be
+able to efficiently utilize parallel compute power. For example,
+datasets that include many equal rows will in most cases cause a
+skewed workload, and cannot be fairly distributed by geometric
+partitioning alone. To handle such cases we suggest a hybrid approach
+of angle- and random partitioning.
+
+The idea is to modify geometric partitioning schemes like equi-volume
+and sample-dynamic by limiting the size of each partition. When we
+reach the predefined limit for a partition, overflow points are placed
+in some other partition using one of the following strategies:
+
+\begin{enumerate}
+	\item Place overflow points in a random partition
+	\item Place overflow points in the partition with most available space
+	\item Place overflow points in the first seen non-full partition
+	\item Use a progressively smaller subset of the angular
+	dimensions to place overflow points in partitions similar to
+	their original placement
+\end{enumerate}
+
+This strategy can be performed during the point distribution or as a
+subsequent step where points are redistributed as needed. The former
+avoids moving points in memory, thus saving memory bandwidth. However,
+it may cause random partitioning to interfere with the geometric
+scheme. Specifically, points that are randomly distributed may
+fill partitions that otherwise could have held geometrically
+distributed points, resulting in a more expensive merge phase. For the
+latter, geometric distribution first priority. Because all points are
+distributed geometrically in a first step, overflow points will not
+interfere with the original partitioning scheme. Obviously, this comes
+at a price, namely memory bandwidth in the re-distribution step.
+
+Depending on costs associated with sub-optimal partitioning, it is
+likely that both methods are viable for selected data distributions.
+Nevertheless, we believe that that avoiding a re-distribution step can
+be advantageous in a multi-core context in order to save memory
+bandwidth in the partition phase.
+
+When placing overflow points, alternative 1 is low-cost and ensures
+that all partitions achieve an approximately equal workload.
+Additionally, we distribute the possible interference to all
+partitions as opposed to alternative 3, where a few partitions risk
+being filled by random points at an early stage. Alternative 4 has the
+advantage of keeping some geometric properties also for overflow
+points, however, for skewed datasets we risk placing overflow points
+in the original partition, voiding our effort to induce a fair
+workload. If partitioning is done sequentially, we would most likely
+choose alternative 1 or 4 (with some modifications to ensure that
+points are indeed fairly distributed), however, when utilizing
+parallelism in in the partitioning phase, alternative 1 will ensure
+that threads to an increasing degree can write to different
+partitions, reducing synchronization costs.
+
+\begin{algorithm}[H]
+	\begin{algorithmic}
+		\Require	$D_i$ is partition $i$ of input relation $D$,
+					$N$	is requested number of partitions,
+					$p$ is the point being distributed
+		\Ensure $p$ is distributed to a non-full partition for the
+		majority of cases
+   		\State $i \leftarrow MapPointToPartition(\ldots)$
+   		\If{$D_i$ is full}
+   			\Comment{Add to random partition}
+   			\State $j \leftarrow rand(1,N)$
+   			\State $D_j \leftarrow D_j \cup \{p\}$
+   		\Else
+   			\State $D_i \leftarrow D_i \cup \{p\}$
+   		\EndIf
+   \end{algorithmic}
+	\caption{GeometricRandomPointDistributor}
+	\label{alg:geometric-random}
+\end{algorithm}
+
+Algorithm \ref{alg:geometric-random} use alternative 1 during the
+point distribution phase to prioritize a fair workload over a strictly
+geometric partitioning scheme.
+
+\subsection{Parallelism in the partition phase}
+\label{sec:parallelism-in-the-partition-phase}
+
+In contrast to algorithms directed at parallel and distributed
+systems, a shared-memory algorithm needs to have a highly optimized
+partitioning phase. Blanas et al. shows that, for hash join, the
+partitioning costs were sufficiently high compared to overall runtime
+that a simple algorithm with no partitioning outperformed a more
+sophisticated algorithm with a partitioning phase
+\cite{blanas2011design}. Therefore we suggest to utilize the
+capability of low-cost communication to induce parallelism in this
+phase.
+
+Algorithm \ref{alg:parallepartition} shows the parallel partitioning
+algorithm that are repeatedly executed by each thread. We use
+\textit{N} threads in order to partition a relation into \textit{N}
+partitions. Obviously, we need some way of determining which points
+each thread should distribute. This can be done in a round robin
+fashion, or using a linear partitioning scheme to define read
+boundaries without physically partitioning points. In our
+implementation we use the linear scheme. To split data into two
+partitions, thread 1 process tuples $[1, \ldots, n/2]$ and thread 2
+process tuples $[n/2, \ldots n]$. Both threads place tuples into
+multiple shared collections (partitions). In the ideal case, thread 1
+only writes to partition $1$, while thread 2 writes to partition $2$,
+avoiding the need for any synchronization.  In practice, some
+collisions will occur and threads will sometimes have to wait for
+locks. However, the number of partitions increase with
+the number of threads, making synchronization gradually more
+fine-grained, reducing the likeliness of collisions. This property
+should allow the algorithm to scale well with an increasing degree of
+parallelism, thereby making it a good match for future architectures.
+
+\begin{algorithm}[H]
+	\caption{PointDistributor}
+	\label{alg:parallepartition}
+	\begin{algorithmic}
+		\Require $D_i$ is partition $i$ of input relation $D$,
+			$p$ is the point being distributed
+		\Ensure $p$ is distributed to the correct partition according
+		to partitioning scheme
+   		\State $i \leftarrow MapPointToPartition(\ldots)$
+   		\State \Lock $D_i$
+   		\State $D_i \leftarrow D_i \cup \{p\}$
+   		\State \Unlock $D_i$
+   \end{algorithmic}
+\end{algorithm}
+
+In the linear and equi-volume partitioning schemes this strategy
+can be used directly. The boundaries are pre-determined, threads
+can therefore easily distribute data with a low amount of
+synchronization. For the sample-dynamic partitioning scheme,
+partition boundaries will change before the requested partitioning
+count has been reached. In this case we suggest a two-step
+process, where partitioning boundaries are calculated sequentially
+using 1\% - 10\% of the input relation before parallel
+partitioning is used as described by Algorithm
+\ref{alg:parallepartition}. We could use a similar strategy for
+the dynamic scheme, but that would only allow parallel computation
+for a small portion if the relation. Instead, we propose the modified
+version described by Algorithm \ref{alg:paralleldyn}.
+
+\begin{algorithm}[H]
+	\caption{DynamicPointDistributor}
+	\label{alg:paralleldyn}
+	\begin{algorithmic}
+		\Require $D_i$ is partition $i$ of input relation $D$,
+			$p$ is the point being distributed
+		\Ensure $p$ is distributed to the correct partition according
+		to partitioning scheme
+		\State $V_{1,\ldots,N}^{before} \leftarrow V_{1,\ldots,N}$
+   		\State $i \leftarrow MapPointToPartition(\ldots)$
+   		\State \Lock $D_i$
+   		\If {$V_i = V_i^{before}$}
+   			\Comment{partition is unchanged, safe to add point}
+   			\State $D_i \leftarrow D_i \cup \{p\}$
+   			\If {$D_i$ is full}
+   				\State $next \leftarrow getNextPartitionId()$
+   				\Comment{atomic fetch-and-increment}
+   				\State split $D_i$ into $D_i, D_{next}$
+   				\State $V_i \leftarrow V_i + 1$
+   				\State $V_{next} \leftarrow 1$
+   				\Comment{initially equal to 0}
+   			\EndIf
+   		\EndIf
+   		\State \Unlock $D_i$
+   \end{algorithmic}
+\end{algorithm}
+
+In Algorithm \ref{alg:paralleldyn}, we use $V_{1,\ldots,N}$ to store
+the current version of each partition. When a partition is changed
+(split), we increment the version number by one using atomic
+operations. It is worth noting that splitting a partition will not
+affect any of the remaining partitions, therefore threads working on
+other partitions can continue as usual. If a point is mapped to
+partition $D_i$ by thread 1, and $D_i$ split by thread 2 before thread
+1 gets a lock, thread 1 will detect that the version has changed and
+restart. This ensures that the algorithm does not add points to
+incorrect partitions even if boundaries are concurrently modified.
+Partitions with version number 0 is not considered in the mapping
+algorithm, thereby avoiding the usage of incomplete boundary values.
+
+\section{Local skyline computation phase}
+
+In \cite{vlachou2008angle}, BBS and SFS are used to compute the local
+skylines, however, in a multi-core context it may be beneficial to use
+simpler algorithms optimized for in memory execution. In our
+experiments, we use the SSkyline algorithm introduced in
+\ref{sec:skyline-algorithms}. In the APSkyline algorithm, each thread
+executes an instance of Algorithm \ref{alg:sskyline} using its private
+partition as input to compute the local skyline independently.
+
+\section{Merge phase}
+
+When the local skylines have been computed, Algorithm \ref{alg:pmerge}
+is executed in a for loop until all partitions $S_1,\ldots,S_N$ has
+been merged into the global skyline.  Note that Algorithm
+\ref{alg:pmerge} exploit parallel compute power to a great degree by
+utilizing efficient inter-thread communication mechanisms in modern
+processor architectures \cite{park2009parallel}.
+
+\section{Adaptive algorithm}
+\label{sec:adaptive-algorithm}
+
+The cost of skyline computation is highly dependent on input data
+characteristics. Specifically, input data that produce a large
+skyline can be very compute-intensive, while input data that produce a
+small skyline can be processed quite fast using simple algorithms.
+However, an angular partitioning technique requires the costly
+operation of transforming every tuple into the hyperspherical space,
+regardless of the input data. For correlated datasets, APSkyline is
+likely to spend more time partitioning than it would take a simpler
+algorithm to produce a result, whereas, APSkyline may excel for
+anti-correlated input data.  In order to achieve efficient skyline
+computation for a wider range of data input, we present an adaptive
+algorithm that use skyline cardinality estimation to select the most
+efficient method for each case.
+
+Algorithm \ref{alg:adaptive-skyline} describes an adaptive algorithm.
+It takes the dataset $D$, and a set of algorithms $A$ with their
+optimal range of computation $C$. By computing an estimate of the
+skyline size and comparing to ranges in $C$, the best algorithm is
+selected. For datasets where an optimal algorithm is unknown, we use
+the default algorithm $A_{default}$.
+
+\begin{algorithm}[H]
+	\caption{AdaptiveSkyline}
+	\label{alg:adaptive-skyline}
+	\begin{algorithmic}
+		\Require $D$ is the input relation,
+		$A$ is a set of skyline algorithms where $A_{default}$ is the default choice,
+		$C$ contains the optimal skyline size ranges for algorithms $A$
+		\Ensure $R$ is the skyline of $D$
+		\State$e \leftarrow$ estimate of $card(D)$
+		\ForAll{$c \in C$}
+			\If{$c.min < e \leq c.max$}
+				\State{$R \leftarrow A_c(D)$}
+				\State \Return
+			\EndIf
+		\EndFor
+		\State $R \leftarrow A_{default}(D)$
+		\Comment{No optimal algorithm found}
+   \end{algorithmic}
+\end{algorithm}
+
+Cost estimation for the skyline operator is addressed in
+\cite{zhang2009kernel,chaudhuri2006robust,godfrey2004skyline}.  In
+order to estimate skyline size, Chaudhuri et al. suggest a sample
+based method based on sampling, log sampling (LS). They modify
+statistical methods for independent data distributions in order to be
+able to estimate size of other data distributions. Specifically, they
+observe that skyline size of independent data distributions increase
+logarithmically with the input cardinality. For anti-correlated
+distributions, the skyline size will be larger than this value,
+whereas for a correlated dataset it will be smaller. This observation
+is used to generate relatively accurate measures of skyline size with
+low computational costs. However, as pointed out in
+\cite{zhang2009kernel}, computing an estimate for non-independent
+distributions using statistical methods designed for independent
+distributions can in some cases lead so large estimation errors. Zhang
+et al. propose a kernel based (KB) method in order to estimate skyline
+cardinality based on a small sample from the data set. KB use more
+sound statistical methods, thereby achieving high accuracy for a
+variety of real and synthetic datasets, even where LS fails.
+
+In an adaptive algorithm running in a shared-memory environment, it is
+essential that the cardinality estimate that can be computed
+efficiently. If we spend a significant time estimating, performance
+gains will be lost for lest cost-intensive datasets. The kernel based
+method proposed in \cite{zhang2009kernel} is the most accurate method,
+however it requires a substantial amount of numeric calculations.
+Therefore, it may be reasonable to use a more basic method, like the
+simpler log-sampling method proposed in \cite{chaudhuri2006robust} in
+this case. An adaptive method can simply default to an algorithm
+efficient in the computation of low to moderate skyline cardinalities
+and use APSkyline for the most compute-intensive cases. As long as we
+are able to detect the most compute-intensive cases efficiently, an
+adaptive algorithm should perform well for most datasets.
+
+We need some way to determine the range of each algorithm. This can
+be done manually based on a set of empirical experiments.  However,
+this would require a substantial amount of manual labour in order to
+map each algorithm to its optimal skyline range. Instead, we suggest
+to use data sets representing a wide variety of distributions to
+calibrate the algorithm automatically when it is installed. Another
+advantage of this approach is that the algorithm can adapt to
+different DBMSs by automatically choosing the method best suited for a
+certain dataset in its current execution environment
+\cite{frigo1998fftw}. 
+
+\begin{algorithm}[H]
+	\caption{Calibrate}
+	\label{alg:calibrate}
+	\begin{algorithmic}
+		\Require $D$ is the input relation,
+			$A$ is a set of skyline algorithms,
+			$D$ is datasets used to estimate the
+			optimal range for algorithms,
+			$C$ maps skyline ranges to each data set
+		\Ensure $R$ specifies the most efficient algorithm for each
+		skyline cardinality range 
+
+		\ForAll{$C_i \in C$}
+			\State $best \leftarrow \infty$
+			\State $algorithm \leftarrow \texttt{Null}$
+			\ForAll{$A_j \in A$}
+				\State $startTimer()$
+				\ForAll{$D_k \in D | j \in C_i.datasets$}
+					\State $A_j(D_k)$
+				\EndFor
+				\State $t \leftarrow endTimer()$
+				\If{$t < best$}
+					\State $algorithm \leftarrow A_j$
+					\State $best \leftarrow t$
+				\EndIf
+			\EndFor
+			\State $C_i.algorithm \leftarrow algorithm$
+		\EndFor
+   \end{algorithmic}
+\end{algorithm}
+
+Algorithm \ref{alg:calibrate} estimates the best algorithm for each
+case based on runtime measurements executed on datasets representative
+for each skyline cardinality range. We are now able to map each range
+to the best-performing algorithm simply by defining a standard set
+of datasets that can be used to evaluate current, and future
+algorithms. Our method can be improved by measuring additional
+parameters, like memory used. We use runtime in because it is an
+objective measurement on performance that give us good indications
+as to which algorithm is most efficient for each case. To ensure
+that mappings are sufficiently accurate it may be appropriate to
+run algorithms multiple times and use average runtime
+measurements.
+
+\cleardoublepage
+\chapter{Experiments and results}
+
+In this chapter, we study the performance of the alternative
+skyline algorithms presented in Chapter \ref{chap:skyline} and
+\ref{chap:apskyline}. For our experiments, we use synthetic and
+real-life datasets. Furthermore, we vary the number of threads
+available, and input cardinality and dimensionality.
+
+\section{Experiment setup}
+
+All our experiments are carried out on a single node of a
+cluster running Debian Linux 7.0. The node used is equipped
+with two Intel Xeon X5650 2.67GHz six-core processors, thus
+providing a total of 12 physical cores at each node. Our
+algorithms are implemented using the Java programming language
+version 1.6 running on the OpenJDK (IcedTea6) runtime
+environment. We include an overview of the test environment in
+Table \ref{tab:environment}.
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{ll}
+	\hline
+	Processors & 2x Intel Xeon X5650 @ 2.67 GHz \\
+	Cores per processor & 6 \\
+	Contexts per core & 2 \\
+	Cache size, sharing & 12MB L3, shared \\
+	Memory & 128GB \\
+	Operating system & Debian 7.0 (wheezy/sid) \\
+	Kernel & 3.2.0-39-generic \\
+	Java runtime & Java version 1.6.0\_27 running on OpenJDK (IcedTea6 1.12.5) \\
+	\hline
+	\end{tabular}
+	\caption{Platform characteristics}
+	\label{tab:environment}
+\end{table}
+
+The Intel Xeon X5650 processor has 6 physical cores which can
+run up to 12 hardware threads using hyper-threading
+technology. Each core is equipped with private L1 and L2
+caches, and all cores on one die share the bigger L3 cache,
+which is last level cache (LLC) for this architecture.
+
+If not stated otherwise, each experiment is executed using values
+displayed in bold in Table \ref{tab:test-params}. A tuple has $d$
+attributes of type single-precision float. The values of the $d$ float
+values of a tuple are generated randomly in the range of $[0,1)$ for
+synthetic data distributions. Input cardinality and dimensionality for
+synthetic distributions are included in Table \ref{tab:test-params},
+whereas real-life datasets are described in Section
+\ref{sec:input-data}.
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{lp{10cm}}
+		\hline \textbf{Parameter} & \textbf{Values} \\ \hline
+		Data distribution & Independent, \textbf{Anti-correlated}, Correlated\\
+		Dataset & \textbf{Synthetic}, NBA, Household, Zillow5D, Zillow6D \\
+		Input cardinality & 50k, 100k, 500k, 1M, \textbf{5M}, 10M, 15M\\
+		Input dimensionality & 2, 3, 4, \textbf{5}\\
+		Thread count & 1, 2, 4, 6, 12, \textbf{24}, 32, 64, 128, 256, 512, 1024 \\ \hline
+	\end{tabular}
+	\caption{Test parameters}
+	\label{tab:test-params}
+\end{table}
+
+Each experiment is executed ten times and we use the median values
+when reporting results. Before taking any measurements, we perform a
+dry-run of the algorithm being tested. After each execution we verify
+the algorithm output by comparing all tuples to the output computed by
+a sequential execution of BNL. Additionally, we measure variance,
+minimum, and maximum values in order to ensure that results are
+sufficiently accurate. For synthetic datasets, new input is generated
+for each of the ten executions. In cases where we achieve unexpected
+results we repeat affected experiments to rule out external
+factors.
+
+\begin{equation}
+	S = T_1 / T_p
+	\label{eq:speedup}
+\end{equation} 
+
+In order to calculate parallel speedup \cite{sun1990another}, and
+to compare algorithms in general, we use Equation \ref{eq:speedup}.
+When comparing sequential to parallel performance, $S$ is the speedup,
+$T_1$ is runtime for a sequential execution, and $T_p$ is runtime for
+a parallel execution using $p$ threads. When comparing two algorithms,
+regardless of parallel speedup, $T_1$ refers to the runtime of one
+algorithm, while $T_p$ refers to the runtime of another algorithm.
+Specifically, when we state that one algorithm $A$ outperforms algorithm
+$B$ by a factor of $X$, $T_1$ is replaced by the runtime of algorithm
+$B$, whereas $T_p$ is replaced by the runtime of algorithm $A$, and
+the factor $X$ is equal to $S$ in Equation \ref{eq:speedup}.
+
+\subsection{Algorithms}
+
+We perform experiments on current state-of-the-art multi-core
+algorithms, in addition to three variations of our newly
+developed APSkyline algorithm. Specifically, we implement the
+following variants:
+
+\begin{description}
+	\item[ParallelBNL] Parallel version of BNL described in
+	Section \ref{sec:parallel-bnl}
+	\item[PSkyline] Parallel D\&Q-based algorithm described in
+	Section \ref{sec:pskyline}
+	\item[APSEquiVolume] Parallel D\&Q-based algorithm using
+	the angle-based partitioning scheme as explained in Section
+	\ref{sec:equi-volume-partitioning}
+	\item[APSSampleDynamic] Parallel D\&Q-based algorithm
+	using the sample-dynamic partitioning scheme described in
+	Section \ref{sec:sample-dynamic-partitioning}
+	\item[APSSampleDynamic+] Parallel D\&Q-based algorithm
+	using the sample-dynamic partitioning scheme described in
+	Section \ref{sec:sample-dynamic-partitioning} in
+	combination the geometric-random modification explained in
+	Section \ref{sec:geometric-random-partitioning}. We set the limit for
+	each partition to be $\frac{card(D)}{N}*0.1$ and place
+	overflow points into random partitions. Overflow handling
+	is done during the initial distribution, avoiding extra
+	memory bandwidth costs
+\end{description}
+
+Due to time restrictions, we do not implement the adaptive algorithm,
+however experiments will still give indications of its applicability
+by testing how different algorithms respond to different data
+distributions.
+
+Note that when we often refer to APSEquiVolume, APSSampleDynamic, and
+APSSampleDynamic+ collectively as APSklyine. When all variations of
+APSkyline achieve similar performance characteristics we refer to
+APSkyline as one algorithm. Whereas, we refer to each variation
+individually when characteristics differ.
+
+ParallelBNL and PSkyline implementations are based on source code
+published by Selke et al. in \cite{selke2010highly}.  However, we
+removed some some testing code and abstractions in order to improve
+performance. For all cases our implementations performs equally good,
+or better than original implementations. We also examined the code
+used by Park et al.  in \cite{park2009parallel} to ensure a fair
+comparison.
+
+Relations are represented as encapsulated low-level floating-point
+arrays of one dimension. We use a class named PointSource to
+encapsulate input relations, and partitions. Each time a point is read
+from a PointSource instance, it is copied into a separate float array
+so that it can be worked on independently.
+
+\subsection{Input data}
+\label{sec:input-data}
+
+The skyline operator is very sensitive to correlations among
+attributes \cite{chaudhuri2006robust}. When the attributes have
+perfect positive correlation, the skyline is a single tuple. Whereas,
+for a perfectly anti-correlated dataset, the skyline is the whole
+table. In general, it can be anywhere in between. We therefore
+perform experiments with a variety of real-life and synthetic
+datasets. 
+
+For the synthetic datasets, we study three different data
+distributions that differ in the way values are generated.  Figure
+\ref{fig:test3distributions} shows a visual representation of each
+distribution in two dimensions.
+
+\begin{figure}[H]
+	\centering
+		\testresultThree{fig:test2}{Independent}{experiments/3/dist_indep}
+		\testresultThree{fig:test2}{Correlated}{experiments/3/dist_corr}
+		\testresultThree{fig:test2}{Anti-correlated}{experiments/3/dist_acorr}\\
+	\caption{Data distributions in 2 dimensions with 10k points}
+	\label{fig:test3distributions}
+\end{figure}
+
+The skyline is fairly small for correlated data distributions,
+increases sharply for anti-correlated data distributions, and is
+somewhere in-between for independent data distributions
+\cite{borzsony2001skyline}. Synthetic datasets are generated as
+follows:
+
+\begin{itemize}
+	\item For independent distributions, all attribute values are
+	generated independently using a uniform distribution
+	\item For correlated distributions, points which are good in one
+	dimension are also good in the other dimensions
+	\item For anti-correlated, points which are good in one dimension
+	are bad in one or all of the other dimensions
+\end{itemize}
+
+We study four real-life datasets that differ in cardinality,
+dimensionality, and data distribution as explained below. Note that we
+do not explicitly state the correlation for any of these datasets.
+However, a casual analysis using the Pearson product-moment
+correlation coefficient indicates positive correlation of varying
+degree for all of our real-life datasets.
+
+\begin{itemize}
+
+	\item Household is a 6-dimensional dataset containing
+	approximately 130k entries, where each entry records the
+	percentage of an annual income spent on six types of expenditures.
+	All values are in the range of $[0,10000)$
+
+	\item NBA is a 5-dimensional dataset containing approximately 17k
+	entries, where each entry records performance statistics for a NBA
+	player. All values are in the range of $[0,10000)$
+
+	\item Zillow5D is a 5-dimensional dataset containing more than 2M
+	entries about real estate in the United States. Each entry
+	includes number of bedrooms and bathrooms, living area, lot area,
+	and year built. All values are in the range of $[0,661371480)$
+
+	\item Zillow6D is a 6-dimensional dataset containing more than 2M
+	entries about real estate in the United States. Each entry
+	includes number of bedrooms and bathrooms, living area, lot area,
+	year built, and tax value. All values are in the range of $[0,661371480)$
+
+\end{itemize}
+
+Zillow datasets are also used in \cite{vlachou2008angle}, however, we
+use different attributes in our experiments. Specifically, Vlachou et
+al. use a 5-dimensional subset of Zillow6D which includes tax value,
+whereas we exclude tax value from the Zillow5D dataset to test
+different aspects of the algorithms, namely a more cost-intensive
+real-life distribution. Nevertheless, we recognize the importance of
+balancing tax value against lot area and other aspects of real estate
+by including all attributes in the Zillow6D dataset.
+
+\section{Effect of programming language} 
+\label{sec:microbench}
+
+Database systems are commonly implemented in low-level compiled
+languages like C or C++ and it would be reasonable to implement
+experimental algorithms in the same (or very similar) languages to
+produce realistic results. Nevertheless, higher-level languages
+like Java provide some convenient features that can make algorithm
+implementation less error-prone
+and allow the code to be closer to the algorithm specification. For
+instance, automatic garbage collection makes it much easier to implement
+some concurrent data structures, like a lazy linked list, where deletions
+can be made simply by removing a reference as opposed to removing the
+reference, queuing it for deletion and finally delete the node after
+ensuring that all threads have released the resource.
+
+If the performance characteristics are sufficiently similar, it would be a
+preferable to use Java. This will most likely avoid hours of debugging, and
+it allows for a fair comparison to the results published in
+\cite{selke2010highly}, which are written in Java and publicly available.
+
+\begin{figure}[H]
+	\centering
+	\testresult{fig:ex1time}{Time}{experiments/experiment1_time}
+	\testresult{fig:ex1speedup}{Speedup}{experiments/experiment1_speedup}
+	\caption{Performance comparison of C and Java implementations of ParallelBNL}
+	\label{fig:microbenchmark}
+\end{figure}
+
+To determine the feasibility of writing experiments in Java, a
+microbenchmark was run. The benchmark compares two equivalent
+implementations of ParallelBNLLazyList as described in
+\cite{selke2010highly}. Figure \ref{fig:microbenchmark} shows that
+both implementations have similar performance characteristics, and
+more or less the same speedup when thread count is increased. Based on
+this result, it seems reasonable to implement our experiments in Java.
+
+\section{Effect of inter-CPU communication}
+
+In this experiment we examine the effects of inter- vs. intra-CPU
+communication. The test environment consists of two CPUs connected by
+a fast interconnect, however, it is unlikely that this interconnect is
+as efficient as communication between cores on one chip. We compare
+runtime and speedup for ParallelBNL running on one CPU exclusively to
+the same algorithm running on both CPUs.
+
+Because ParallelBNL use a shared list to store the results, it
+requires a substantial amount of inter-thread communication.
+Therefore it is a good algorithm for testing the effect of CPU
+communication.
+
+\begin{figure}[H]
+	\centering
+		\testresult{fig:test2}{Runtime}{experiments/cpu/runtime}
+		\testresult{fig:test2}{Speedup}{experiments/cpu/speedup}\\
+	\caption{Performance comparison between ParallelBNL executed
+	with one and two CPUs enabled}
+	\label{fig:test-cpu}
+\end{figure}
+
+Figure \ref{fig:test-cpu} shows the results. The speedup graph
+shows the same speedup that for 6 threads or less, which is to be
+expected because each CPU has exactly 6 cores. When thread count
+is increased to 12 we see a big difference between one and two
+CPUs. Specifically, ParallelBNL-1CPU achieves only a modest
+increase in speedup, which can be attributed Hyper-Threading,
+while ParallelBNL-2CPU achieves a speedup close to 11. If the
+algorithm were run on one CPU with 12 cores, we would expect
+both algorithms to experience a speedup of exactly 12 when 12
+threads were used. However, it is evident that inter-CPU
+communication comes at a cost. Using two identical CPUs is at
+most 1.75 times faster than using one CPU in our experiments. That
+is, we lose about 25\% parallel speedup compared to one CPU with
+the same number of cores.
+
+\section{Effect of thread count}
+\label{sec:test2}
+
+In this experiment, we examine the effect of using multiple cores on the
+speed of ParallelBNL, PSkyline, and APSkyline. We go from 1 to
+1024 threads. It is expected to reach peak performance at 24
+threads, which is the maximum number of hardware threads available
+(12 physical cores + hyper-threading). As number of threads
+increase beyond 24, we expect that performance will gradually
+decrease due to increased synchronization costs without additional
+parallel compute power. 
+
+We test the worst-case scenario of skyline computation using an
+anti-correlated dataset. The skyline of anti-correlated datasets
+generally have a high cardinality, requiring algorithms to handle
+large local- and global skylines. 
+
+ParallelBNL is expected to be inefficient because skyline tuples
+are stored in a large shared linked list that need to be iterated
+through for every input tuple. PSkyline should be able to better
+utilize parallel compute power with independent local skyline
+computations. However, because PSkyline does not exploit geometric
+properties of the dataset in order to limit local skylines, it
+will most likely do more work than necessary in the merge phase.
+APSkyline has the same advantages as PSkyline in addition to a
+strategic partitioning scheme that should limit the size of local
+skylines, thereby reducing merge costs. This experiment will give
+insight into RQ4 by investigating if the expensive partitioning
+phase in APSkyline is able to leverage skyline computation in such
+a way that APSkyline is given a real performance advantage
+compared to the trivial scheme used in PSkyline.
+
+\begin{figure}[H]
+	\centering
+		\testresult{fig:test2}{Runtime}{experiments/2/runtime}
+		\testresult{fig:test2}{Speedup}{experiments/2/speedup}\\
+	\caption{Comparison of algorithms running with a different number of threads}
+	\label{fig:test-threadcount}
+\end{figure}
+
+Figure \ref{fig:test-threadcount} shows the results. Speedup for each
+algorithm is relative to the same algorithm run with one thread, not
+to a common reference point. This was done so that results can be
+easily compared related articles
+\cite{park2009parallel,selke2010highly}.
+
+For a low thread count ParallelBNL is inefficient compared to the
+D\&Q based algorithms. This is most likely due to the fact that
+D\&Q based algorithms use SSkyline for for local skyline
+computation, which, in contrast to ParallelBNL, use an array for
+storing results. The linked list used in ParallelBNL is not as
+memory efficient as an array structure for sequential
+computations. 
+
+ParallelBNL has a good speedup as thread count is increased. This is
+in line with results presented in \cite{selke2010highly}, and shows
+that a basic algorithm can be quite effective when parallel compute
+power and low-cost synchronization constructs are available. Using all
+cores , ParallelBNL shows a performance very close to PSkyline.
+
+PSkyline shows a modest speedup compared to the other algorithms.
+Surprisingly, independent local skyline computations is not
+sufficient to beat ParallelBNL to any great degree, even for a
+worst-case scenario. Figure \ref{fig:test-threadcount-segmented}
+shows the segmented runtime for PSkyline. Local skyline
+computation shows diminishing performance gains as available
+parallel compute power increase. This supports our expectations
+regarding the lack of geometric partitioning. As number of threads
+increase, PSkyline will produce an increasing amount of local
+skyline tuples that are discarded in the merge phase.
+
+\begin{figure}[H]
+	\centering
+		\testresult{fig:test2}{PSkyline}{experiments/2/pskyline_segmented}
+		\testresult{fig:test2}{APSEquiVolume}{experiments/2/apskyline_segmented}\\
+	\caption{Segmented runtime for PSkyline and APSEquiVolume}
+	\label{fig:test-threadcount-segmented}
+\end{figure}
+
+APSkyline clearly outperforms other algorithms in this experiment. When
+all cores are in use (24 threads), APSkyline is \textbf{4.2 times
+faster than PSkyline} and \textbf{5.2 times faster than
+ParallelBNL}. Figure \ref{fig:test-threadcount-segmented} shows
+that the partitioning technique used in APSkyline is more
+expensive than the one used in PSkyline. Nevertheless, time spent
+partitioning is more than compensated for in subsequent phases.
+In Figure \ref{fig:test-threadcount} we can see that APSkyline
+achieves super-linear speedup for up to 12 threads. Obviously,
+super-linear speedup cannot be explained parallelism alone, we
+therefore attribute positive results to a combination of an
+increased parallel compute power, an increase in high-level cache
+(each core contributes with its private cache), and smaller input
+cardinalities for SSkyline. That is, SSkyline does not receive its
+optimal input cardinality for low thread counts, therefore
+perceived speedup cannot be attributed parallel compute power
+alone. APSkyline is able to utilize parallel compute power in
+every phase as shown by Figure
+\ref{fig:test-threadcount-segmented}. Unsurprisingly, there is no
+significant performance differences between variations of
+APSkyline. For an anti-correlated all proposed APSkyline
+variations achieve are able to distribute data fairly.
+
+In summary, we observe that ParallelBNL is very inefficient for a low
+thread count compared to D\&Q-based algorithms. However, as the number
+of available threads increase, ParallelBNL shows performance
+characteristics comparable to PSkyline. Furthermore, all variations of
+APSkyline achieve great speedup and outperforms other algorithms in a
+significant degree.
+
+\section{Effect of data dimensionality}
+\label{sec:test4}
+
+Unlike selections where adding a new selection can only decrease the
+cardinality, adding a new dimension can increase the skyline
+cardinality, indeed up to the size of the entire relation
+\cite{chaudhuri2006robust}. This means that an increase in
+dimensionality will not only increase the input volume in terms of an
+additional column, it will also increase the number of rows that need
+to be produced by the operator. It is likely that a small increase in
+dimensionality will create profound effects on algorithm performance.
+
+To test the effect of different dimensionality, algorithms are run
+with input dimensions ranging from 2 to 5. We expect APSkyline to be
+increasingly efficient compared to other algorithms as the input
+dimensionality increases. For a low dimensionality, the data volume
+may not be large enough to take advantage of the more expensive
+pre-processing (partitioning phase) used in APSkyline, giving the
+other algorithms an advantage. 
+
+\begin{figure}[H]
+	\centering
+	\testresultSingle{experiments/dimensionality/runtime}
+	\caption{Comparison of algorithms running with varying dimensionality}
+	\label{fig:test-dimensionality}
+\end{figure}
+
+Figure \ref{fig:test-dimensionality} shows the results and confirms
+our expectations. For a dimensionality of 3 or less, ParallelBNL is
+the most efficient algorithm, while APSkylineSampleDynamic+ is the
+least efficient. For a dimensionality of 4, APSEquiVolume and
+APSSampleDynamic outperform other algorithms by a small margin. With 5
+dimensions or more, all variations of APSkyline significantly
+outperform other algorithms. In contrast to earlier algorithms,
+APSkyline scale well with dimensionality, and we expect the same
+pattern to continue as dimensionality is further increased.
+
+\begin{figure}[H]
+	\centering
+		\testresult{fig:test2}{PSkyline}{experiments/dimensionality/pskyline_segmented}
+		\testresult{fig:test2}{APSkyline}{experiments/dimensionality/apskyline_segmented}\\
+	\caption{Segmented runtime for PSkyline and APSkyline. For
+	APSkyline, results from equi-volume, sample-dynamic, and
+	geometric-random partitioning are shown for each dimensions
+	with equi-volume as the leftmost, and geometric-random as
+	the rightmost bar}
+	\label{fig:test-dimensionality-segmented}
+\end{figure}
+
+Interestingly, the equi-volume partitioning scheme is faster than
+sample-dynamic and geometric-random schemes. By investigating each
+phase separately (see Figure \ref{fig:test-dimensionality-segmented}),
+we observe a performance difference in all phases. This is most likely
+due to sub-optimal partitioning caused by the greedy partitioning
+technique used in both of the dynamic partitioning schemes. That is,
+when we specify partitioning boundaries based on only 1\% of the input
+set, the algorithm may choose a subset that does not accurately
+represent the dataset as a whole. By inducing random partitioning we
+make matters worse, causing each partition not only to have
+sub-optimal partitioning boundaries, but also a number of tuples that
+are distributed with no consideration for geometric properties.
+Nevertheless, all variations of APSkyline achieve superior performance
+compared to PSkyline and ParallelBNL for sufficiently big datasets,
+and it is likely that sample-dynamic and geometric-random schemes may
+be more effective for real-life datasets.
+
+In conclusion, ParallelBNL and PSkyline are more efficient for
+datasets with low dimensionality, while APSkyline are more efficient
+for datasets with high dimensionality. Furthermore, performance
+differences increase as dimensionality increase, causing APSkyline
+to be significantly more efficient than competing algorithms for a
+5-dimensional dataset.
+
+\section{Effect of data cardinality}
+
+In this experiment we examine how algorithms scale with an increasing
+cardinality. Obviously, we expect the runtime for all algorithms to
+increase with the cardinality. However, we also expect different
+algorithms to respond differently to cardinality changes.
+Specifically, we expect ParallelBNL to be most efficient for low
+cardinalities with PSkyline as a close runner up. Furthermore, we
+expect APSkyline to be most efficient for high cardinalities.
+
+\begin{figure}[H]
+	\centering
+	\testresultSingle{experiments/cardinality/runtime}
+	\caption{Comparison of algorithms running with varying cardinality}
+	\label{fig:test-cardinality}
+\end{figure}
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{l|lllll}
+		\hline
+		\textbf{Card} & 
+		\textbf{APS-EV} &
+		\textbf{APS-SD} & 
+		\textbf{APS-SD+} & 
+		\textbf{PSkyline} &
+		\textbf{ParallelBNL} \\
+		\hline
+		50k  & 162ms  & 168ms  & 198ms  & 309ms  & 388ms \\
+		100k & 222ms  & 352ms  & 382ms  & 757ms  & 803ms \\
+		500k & 1.00s  & 1.33s  & 1.81s  & 3.39s  & 3.24s \\
+		1M   & 1.85s  & 2.51s  & 3.02s  & 5.55s  & 6.65s \\
+		5M   & 5.57s  & 6.71s  & 10.18s & 24.22s & 31.75s \\
+		10M  & 8.30s  & 10.46s & 16.78s & 43.40s & 91.55s \\
+		15M  & 10.61s & 13.74s & 22.92s & 61.97s & 167.5s \\
+		\hline
+	\end{tabular}
+	\caption{Test results for cardinality experiment. APS-EV is
+	short for APSEquiVolume, APS-SD for APSSampleDynamic, and
+	APS-SD+ for APSSampleDynamic+}
+	\label{tab:test-cardinality}
+\end{table}
+
+To expose details hard to notice in the graph, we supplement with
+tabular representations. Test results are presented in Table
+\ref{tab:test-cardinality} and Figure \ref{fig:test-cardinality}. 
+
+In contrast to our expectations, we observe that APSkyline achieve the
+best runtime for all input sizes. Table
+\ref{tab:test-cardinality-skysize} shows that small datasets have a
+large percentage of skyline tuples. This means that, even with small
+datasets, skyline algorithms have to process a relatively large
+number of skyline tuples, which will give an advantage to D\&Q-based
+algorithms. APSkylineEquiVolume, the most efficient APSkyline variant
+for this experiment, are significantly more efficient than competing
+algorithms for big cardinalities, and outperform ParallelBNL and
+PSkyline by factors of \textbf{15.8} and \textbf{5.9},
+respectively.
+
+\begin{table}[H]
+	\centering
+	\begin{tabular}{ll}
+		\hline
+		\textbf{Cardinality} & 
+		\textbf{Skyline size} \\
+		\hline
+		50k  & 18.25\% \\
+		100k & 12.48\% \\
+		500k & 5.35\%  \\
+		1M   & 3.64\%  \\
+		5M   & 1.31\%  \\
+		10M  & 0.82\%  \\
+		15M  & 0.62\%  \\
+		\hline
+	\end{tabular}
+	\caption{Test results for cardinality experiment}
+	\label{tab:test-cardinality-skysize}
+\end{table}
+
+Figure \ref{fig:test-cardinality-perstuple} shows the time used per
+skyline tuple by each algorithm. It is evident that ParallelBNL does
+not handle big cardinalities well. Time used per skyline tuple should
+ideally be unchanged (or decreasing) as cardinality increase. However,
+since the percentage of skyline tuples are substantially reduced with
+a bigger cardinality, it is acceptable with a modest increase in
+processing time per skyline tuple. In this regard, APSkyline is quite
+successful. Processing time per tuple increase very slowly compared to
+the other two algorithms, and it is likely that we will see the same
+behaviour as the cardinality increase further. This is a great example
+of the applicability of an angle-based partitioning scheme in parallel
+environments. We attribute APSkylines success to its ability to
+eliminate non-skyline tuples early. The same reason can be used to
+explain why the geometric-random partitioning scheme, favoring
+fairness over geometric heuristics, is somewhat less efficient than
+the other schemes.
+
+\begin{figure}[H]
+	\centering
+	\testresultSingle{experiments/cardinality/perstuple}
+	\caption{Runtime per tuple with increasing cardinality}
+	\label{fig:test-cardinality-perstuple}
+\end{figure}
+
+In summary, ParallelBNL achieves acceptable performance for low
+cardinalities, but scales poorly for cardinalities greater than 1M,
+where processing time per tuple increases steeply. PSkyline exhibit
+the similar behavior as ParallelBNL as we reach cardinalities of 1M or
+higher, however, not same degree. All variants of APSkyline scales
+well with increasing cardinality, and are most efficient for all
+datasets in this experiment.
+
+\section{Effect of data distribution}
+\label{sec:test3}
+
+In this experiment we compare algorithms in terms of data
+distribution.  Börzsöny et al. states that the skyline is fairly small
+for correlated input, whereas the skyline size for anti-correlated
+input increases sharply. The size of the skyline for independent
+input is somewhere in between \cite{borzsony2001skyline}. We
+execute each algorithm with three synthetic datasets with
+correlated, independent, and anti-correlated  distributions.
+Additionally, we execute each algorithm for the three real-life
+datasets NBA, Household, and Zillow.
+
+We expect ParallelBNL and PSkyline to be best for the correlated
+and to some degree for the independent datasets. For the
+anti-correlated dataset, we expect APSkyline to be most
+efficient. Skyline computation for correlated datasets are in
+general a simple problem, requiring little work, therefore simple
+algorithms with less partitioning costs may have an advantage. As
+stated in \cite{vlachou2008angle}, the anti-correlated dataset is
+most interesting, since the skyline operator aims to balance
+contradicting criteria \cite{morse2007efficient,vlachou2008angle}.
+For the real-life datasets, we expect algorithms to have similar
+performance. However, they are quite small, which can give an
+advantage to ParallelBNL and PSkyline.
+
+\begin{figure}[H]
+	\centering
+		\testresultDist{fig:test2}{Anti-correlated}{experiments/distribution/acorr}
+		\testresultDist{fig:test2}{Independent}{experiments/distribution/indep} \\
+		\testresultDist{fig:test2}{Correlated}{experiments/distribution/corr}
+	\caption{Segmented runtime for synthetic datasets}
+	\label{fig:test-distribution-syntetic}
+\end{figure}
+
+Figure \ref{fig:test-distribution-syntetic} shows the results for
+synthetic datasets. We present the segmented runtime for each
+algorithm so that the reader can easily see how each phase responds to
+the different data distributions. Test results match well with our
+expectations. ParallelBNL and PSkyline are clearly most efficient for
+the correlated dataset, while APSkyline is superior for the
+anti-correlated dataset. For the independent dataset algorithms
+achieve more similar performance characteristics, however, PSkyline
+and ParallelBNL are noticeably faster than APSkyline.
+
+Angle-based partitioning is particularly efficient for the
+anti-correlated dataset, where APSkyline achieves the best
+performance. We observe equi-volume partitioning is most efficient in
+this case. In an anti-correlated dataset, points will be more or less
+perfectly distributed by an equi-volume scheme, ensuring fair
+workloads and early elimination of skyline tuples. Our sample-dynamic
+scheme use only 1\% of the input to generate partitioning boundaries,
+and may end up with a sub-optimal distribution. The same is true for
+the geometric-random strategy, in which overflow points may interfere
+with the angle-based partitioning scheme, further degenerating the
+angle-based partitioning strategy.
+
+Interestingly, the sample-dynamic partitioning scheme is notably less
+efficient than the equi-volume partitioning scheme for an independent
+data distribution. Most of the difference can be accounted for in the
+partitioning phase, where the dynamic strategy is more expensive.
+Nevertheless, we also observe that local skyline computation is faster
+when using equi-volume partitioning. We attribute this to the fact
+that the sample-dynamic scheme use only a few sampling points to
+determine the partitioning boundaries, which give a sub-optimal
+division of labour if the sample points is insufficient to represent
+the dataset as a whole.
+
+For the correlated dataset ParallelBNL and PSkyline are vastly more
+efficient than APSkyline variants, which spend most of the time
+partitioning. For cases where the skyline is small compared to input
+cardinality, basic algorithms can be very efficient. The reason being
+that ParallelBNL is able to keep its list of potential skyline tuples
+small, resulting in fast dominance testing, and that PSkyline are able
+to produce a small local skylines that can be merged efficiently.
+
+Figure \ref{fig:test-distribution-real} shows test results for the
+real-life datasets. We include only the sample-dynamic partitioning
+schemes for APSkyline for datasets of dimensionality greater than five
+because of implementation problems for equi-volume partitioning. This
+should not be seen as a weakness of the partitioning strategy in
+itself, but rather an unfortunate implementation detail that we were
+unable to solve before presenting our results.
+
+\begin{figure}[H]
+	\centering
+		\testresultDist{fig:test2}{Household}{experiments/distribution/houses}
+		\testresultDist{fig:test2}{NBA}{experiments/distribution/nba}\\
+		\testresultDist{fig:test2}{Zillow5D}{experiments/distribution/zillow}
+		\testresultDist{fig:test2}{Zillow6D}{experiments/distribution/zillow6d}
+	\caption{Segmented runtime for real-life datasets}
+	\label{fig:test-distribution-real}
+\end{figure}
+
+PSkyline achieves the best performance for NBA and Household. For
+these sets D\&Q based algorithms show similar performance in the
+local- and global (merge) skyline computation phases. However,
+APSkyline spend too much time partitioning and are therefore less
+efficient than PSkyline. In the NBA dataset, the sample-dynamic
+partitioning schemes outperforms the equi-volume partitioning scheme.
+This can be attributed the fact that the dynamic strategy is designed
+to respond to different data distributions in such a way that work is
+more fairly distributed. In a real-life dataset, a (sample-)dynamic
+partitioning scheme will necessarily be more robust than a fixed
+scheme that does not adapt to its input.
+
+For the Zillow5D dataset we see some interesting results. ParallelBNL
+is outperformed in an order of magnitude by all other algorithms. In
+fact, the best-performing algorithm, APSSampleDynamic+ is 36 times
+faster than ParallelBNL for this case. Additionally, we observe that
+PSkyline and APSSampleDynamic+ is spends significantly less time in
+the local skyline computation phase than APSEquiVolume and
+APSSampleDynamic.
+
+We attribute ParallelBNLs performance decline to a high percentage of
+skyline tuples, for a large dataset. About 4\% of the overall dataset is
+part of the skyline. However, as this is the case also for an
+anti-correlated dataset, and ParallelBNL achieves better performance
+relative to other algorithms with synthetic datasets, it is unlikely
+that skyline size is the only cause. The dominant performance factor
+in ParallelBNL is number of tuples that need to be stored in the
+linked list, and the duration in which they need to be stored. If, for
+some reason, this list is filled with many points at an early stage
+due to a particularly hard data distribution, ParallelBNL will achieve
+sub-optimal performance. We believe that this is the case for the
+Zillow5D distribution.
+
+The reason for APSEquiVolume and APSSampleDynamic spending so much
+time in the local skyline computation phase when processing the Zillow
+dataset is lack of a fair work distribution. We observed that most
+points were placed in only a few partitions, causing the majority of
+threads being idle. PSkyline does not have this problem, as it will
+always divide data fairly without the use of any heuristics. In this
+case PSkyline performs very well despite of using a trivial
+partitioning technique. Nevertheless, APSSampleDynamic+ is able to
+outperform PSkyline with a factor of 1.4 using an angle-based
+partition technique in combination with random partitioning.
+
+Another interesting observation is the significant performance gap
+between Zillow5D and Zillow6D. The only difference between these two
+datasets is one dimension, namely tax value. However, considering that
+tax value for a house necessarily is bound to have some form of
+correlation with nearly all aspects of the house, it is hardly
+surprising that results are affected. In fact, Zillow5D contains a
+massive skyline comprised of 91152 tuples, whereas Zillow6D contains
+only 719 skyline tuples, less than 1 percent of the former.
+Furthermore, we see distinct similarities between the correlated
+dataset and Zillow6D. APSkyline spends the majority of the runtime
+partitioning, while ParallelBNL and PSkyline take advantage of the
+simple dataset to achieve superior performance.
+
+In summary, algorithms based on angle-partitioning were most efficient
+for the time consuming datasets, while ParallelBNL and PSkyline
+excelled for simpler cases. PSkyline performed slightly better
+than APSkyline for two small real-life datasets and was quite
+efficient for a work-intensive real-life dataset. Nevertheless
+APSSampleDynamic+ was able to reduce runtime by approximately 30\%
+compared to PSkyline for the most work-intensive real-life
+dataset.
+
+\section{Implications}
+
+These results imply that the increasing parallel compute power in
+modern processors can have a significant impact on performance in
+DBMSs. Not only for independent queries running in parallel, but also
+internally in relational operators.
+
+A simple basic-nested-loop \cite{selke2010highly} was able to
+efficiently utilize parallel compute power for synthetic datasets and
+moderately small real-life datasets. When all threads were in use,
+ParallelBNL achieved performance comparable to PSkyline, even though
+ParallelBNL performed significantly worse for low thread counts. This
+indicates that, basic algorithms can be very efficient if they are
+able to utilize parallel compute power to a sufficient degree.
+
+The D\&Q-based skyline algorithm presented in \cite{park2009parallel}
+achieved competitive performance characteristics for wide variety of
+input, and was significantly more efficient than ParallelBNL and
+APSkyline variations that exclusively used geometric properties in
+partitioning. However, a variant of APSkyline using geometric-random
+partitioning to prioritize a fair workload was most efficient for this
+case. This illustrates the importance of fairness in parallel
+algorithms. Furthermore it shows that, even though an basic algorithm
+may exhibit great speedup when parallelized, there is no guarantee
+that it will be able to compete with more sophisticated algorithms for
+work-intensive input data.
+
+We observed that an expensive pre-processing step was very effective
+for skyline computation in a multi-core environment. Specifically, we
+were in some cases able to significantly outperform competing
+algorithms by adapting a novel angle-based partitioning technique
+originally developed for parallel and distributed systems. We
+therefore emphasize the importance of considering techniques known
+to be efficient for traditional DBMSs also in a multi-core
+context, even though they may be compute-intensive.
+
+Each of the tested algorithms excelled for some situations, however,
+the D\&Q-based algorithms were more robust for a real-life input, and
+in general more stable than ParallelBNL for a variety of datasets.
+Additionally, APSkyline was significantly more efficient than
+competing algorithms for work-intensive datasets. In skyline
+computation, it is reasonable to use heuristics to choose between a
+number of algorithms in order to maximize performance for all
+distributions. Therefore, it is important identify characteristics
+that can be used to determine which algorithm is best for a given
+dataset, extending the work done in
+\cite{chaudhuri2006robust,godfrey2004skyline,karnsteclt2007cost,lu2008effective}
+by also considering multi-core algorithms in shared-memory
+environments.
+
+\cleardoublepage
+\chapter{Conclusions and future work}
+
+Recently multi-core processors have become wide-spread, and it is
+likely that this this architecture will continue to thrive in the
+future. Even laptops are equipped with processors of four cores or
+more. This have led to an increasing interest in shared-memory
+programming and parallel algorithms. Efficient algorithms and data
+structures running on shared-memory systems with multi-core processors
+are needed to utilize the increased compute power.
+
+In this thesis we explored the multi-core landscape in a database
+context by investigating existing methods and algorithms, developing a
+novel multi-core skyline algorithm, and by conducting various
+experiments. In order to identify and explain important design
+criteria for multi-core algorithms we introduced modern processor
+architectures in a historical perspective. Additionally, we described
+the skyline operator, including associated state-of-the art sequential
+and parallel algorithms. Finally, we conducted various experiments to
+evaluate how our proposed skyline algorithm performed compared to the
+current state-of-the-art multi-core algorithms, and discussed the
+implications of reported results. 
+
+\section{Conclusions}
+
+We started this thesis by asking four research questions related to
+database operators on multi-core architectures. In this section we
+discuss and answer each question based on observations made in
+research, development, and experimentation.
+
+\begin{description}
+	\item[RQ1] How can we efficiently exploit multi-core architectures
+	when implementing database operators? Are there cases where this
+	is impossible?
+\end{description}
+
+In Section \ref{sec:algorithm-design} we developed a number of design
+goals for shared-memory algorithms. In short, to efficiently exploit
+multi-core architectures it is essential that algorithms are designed
+with a high degree of parallelism and scalability. Algorithms should
+minimize synchronization costs and memory usage, however, efficient
+inter-thread communication can in some cases be used to improve
+performance \cite{meneghin2012performance} in a shared-memory system.
+When inter-thread communication in use, there is a risk of false
+sharing, which can cause significant performance degradation.
+Consequently, developers must take special care to avoid memory access
+patterns causing false sharing, as described in Section
+\ref{sec:false-sharing}. Finally, algorithms should be designed to
+achieve a fair workload among parallel threads, a parallel
+algorithm is only as fast as its slowest thread.
+
+\begin{description}
+	\item[RQ2] How can we determine if an algorithm or an operator is
+	viable for multi-core optimizations? 	
+\end{description}
+
+It is widely known that multi-core processors are ideally used for
+CPU-intensive tasks like skyline computation. Nevertheless, by
+exploiting low inter-thread communication costs it is also possible to
+achieve performance gains for less CPU-intensive operators like
+top-$k$ and join \cite{albutiu2012massively,blanas2011design}. By
+analyzing algorithms, looking for independent operations and other
+characteristics presented in Section \ref{sec:algorithm-design}, it
+should be relatively easy to determine applicability for
+multi-core optimizations.
+
+\begin{description}
+	\item[RQ3] Is it reasonable to regress into more basic algorithms
+	in order to exploit the increasing parallel compute power in
+	modern processors?
+\end{description}
+
+Research done by Selke et al. in \cite{selke2010highly} suggests that
+the answer is yes, it may be reasonable parallelize basic algorithms
+in order to outperform more elaborate algorithms that is inherently
+sequential or require a substantial amount of pre-processing. Our
+results indicated that, for CPU-intensive operators like the skyline
+operator, parallelizing the most basic algorithms may not be
+sufficient. However, we also observed that basic algorithm did excel
+for some inputs. Based on our observations, we conclude that
+regressing to more basic algorithms is reasonable in some cases,
+but not as a general strategy
+
+\begin{description}
+	\item[RQ4] Can pre-processing techniques from parallel and
+	distributed systems be efficient in a shared-memory context where
+	inter-thread communication is an order of magnitude less
+	expensive?  
+\end{description}
+
+By adapting the partitioning scheme first published in
+\cite{vlachou2008angle} into a shared-memory system we illustrated
+that pre-processing techniques directed at parallel and distributed
+systems can indeed be efficient in a shared-memory environment. We
+were able to consistently outperform state-of-the-art shared-memory
+algorithms for skyline computation with anti-correlated data input.
+For correlated and independent datasets our algorithm spent a
+considerable part of the runtime in the partition phase, and was not
+as efficient as more basic algorithms. Nevertheless, observations
+indicate that such pre-processing techniques have a use also in
+multi-core systems.
+
+%Basic algorithms should therefore be considered
+%alongside more sophisticated methods on a case by case basis.
+
+%Reported results suggests that multi-core processors indeed can be
+%utilized to improve performance for database operations. However, care
+%needs to be taken in order to utilize parallel compute power
+%efficiently, and to ensure correct execution in a concurrent
+%environment. Thus far, many shared-memory algorithms are essentially
+%parallel versions of the most basic traditional algorithms, which may
+%be sub-optimal in some cases. It is expected that core count will
+%continue to increase, and database management systems must be able to
+%efficiently utilize the additional compute power to keep up with
+%development in other areas. We therefore suggest that researchers
+%should only focus not only on parallelizing basic algorithms, but also
+%to adapt more elaborate techniques, even though they may require an
+%additional overhead.
+
+\section{Future work}
+
+There is still much research that can be done for skyline computation,
+and in general, related to effective utilization of modern processors
+in DBMSs. It is likely that related operators like skyband
+\cite{papadias2005progressive,chen2010effective} and skyline cube
+\cite{yuan2005efficient} can be adapted into multi-core environments
+using techniques similar to the ones in APSkyline. Additionally, we
+believe that our research can be used in the process of implementing
+other CPU-intensive operators like reverse top-$k$
+\cite{vlachou2010reverse,vlachou2013branch} on shared-memory
+systems.
+
+In order to utilize data parallelism in APSkyline, it should be
+possible to use SIMD operations when computing angular coordinates by
+performing multiple multiplications simultaneously (during a single
+point transformation). Additionally, we see a potential for processing
+multiple points at the same time utilizing SIMD additions. This
+requires blurring of the boundaries between points to some degree,
+however, such details can easily be abstracted into a functions and
+data structures. If APSkyline are able to more efficiently calculate
+angular coordinates, the algorithm may be relevant also for less
+cost-intensive datasets.
+
+The adaptive algorithm suggested in Section
+\ref{sec:adaptive-algorithm} can be implemented to create a more
+robust skyline algorithm for shared-memory environments. As a
+variation, it would be interesting to investigate the possibility of
+processing many small sample sets using SSkyline in parallel, then
+combine sample cardinalities to estimate the global skyline
+cardinality. This may well be inaccurate, however, by choosing small
+sample sizes it can be done very efficiently by utilizing parallel
+compute power.
+
+In this thesis, all experiments were executed on the Intel Nehalem
+architecture. It possible that one would achieve different results by
+executing experiments on another architecture, like the AMD Bulldozer.
+The AMD Bulldozer is equipped with a greater number of cores, grouped
+pairwise into modules. Each pair sharing components like the
+floating-point unit and early pipeline stages. Because our
+experiments make heavy use of floating-point operations in order to
+calculate the skyline, such an architecture may achieve sub-optimal
+performance. 
+
+\cleardoublepage
+\bibliographystyle{abbrv}
+\bibliography{report}
+
+%\appendix
+%\cleardoublepage
+%\chapter{Example code}
+
+\end{document}

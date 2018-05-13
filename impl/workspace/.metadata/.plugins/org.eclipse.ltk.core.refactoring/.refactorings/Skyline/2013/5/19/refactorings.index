@@ -1,0 +1,7 @@
+1367928037660	Rename local variable 'd1'
+1367928302634	Extract method 'printDistribution'
+1367999211163	Copy compilation unit
+1367999233398	Rename type 'SkylineAlgorithmBBS'
+1368008682553	Rename method 'getMaxdist'
+1368008687912	Rename local variable 'maxdist'
+1368008706465	Rename local variable 'mbrMax'

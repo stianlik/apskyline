@@ -1,0 +1,51 @@
+package no.ntnu.skyline;
+
+import ifis.skysim2.data.generator.AbstractDataGenerator;
+
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.util.Locale;
+import java.util.Scanner;
+
+public class FileDataGenerator extends AbstractDataGenerator {
+	
+	String filename;
+	int d = 0;
+	
+	public FileDataGenerator(String filename, int d) {
+		this.filename = filename;
+	}
+
+	@Override
+	public float[] generate(int d, int n) {
+		Scanner sc = this.getScanner();
+		float[] data = new float[d*n];
+		for (int row = 0; row < n; ++row) {
+			sc.nextInt();
+			for (int col = 0; col < d; ++col) {
+				data[row*d + col] = sc.nextFloat();
+			}
+			
+//			if (d < this.d) {
+				sc.nextLine();
+//			}
+		}
+		return data;
+	}
+	
+	@Override
+	public String getShortName() {
+		return "File data generator";
+	}
+	
+	private Scanner getScanner() {
+		Scanner sc;
+		try {
+			sc = new Scanner(new File(filename));
+		} catch (FileNotFoundException e) {
+			throw new RuntimeException("Unable to read file: " + filename);
+		}
+		sc.useLocale(Locale.US);
+		return sc;
+	}
+}
